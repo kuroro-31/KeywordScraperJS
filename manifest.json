@@ -7,7 +7,13 @@
       "activeTab",
       "scripting",
       "tabs",
-      "storage"
+      "storage",
+      "notifications",
+      "webRequest"
+    ],
+    "host_permissions": [
+      "*://*.google.com/*",
+      "https://hooks.slack.com/*"
     ],
     "background": {
       "service_worker": "background.js"
@@ -17,8 +23,12 @@
     },
     "content_scripts": [
       {
-        "matches": ["*://www.google.com/search*"],
-        "js": ["constants.js", "contentScript.js"]
+        "matches": ["*://*.google.com/*"],
+        "js": [
+          "constants.js",
+          "recaptcha.js",
+          "content_script.js"
+        ]
       }
     ]
   }

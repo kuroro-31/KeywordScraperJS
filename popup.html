@@ -41,6 +41,16 @@
       font-size: 0.85em;
       background: #fafafa;
     }
+    #csv-preview {
+      max-height: 100px;
+      overflow-y: auto;
+      border: 1px solid #ccc;
+      padding: 8px;
+      margin: 10px 0;
+      font-family: monospace;
+      white-space: pre;
+      background-color: #f5f5f5;
+    }
   </style>
 </head>
 <body>
@@ -51,6 +61,8 @@
 
   <div id="status">待機中...</div>
   <div id="results-container"></div>
+  <div id="csv-preview"></div>
+  <button id="copy-csv-btn">CSVをコピー</button>
 
   <script src="popup.js"></script>
 </body>
