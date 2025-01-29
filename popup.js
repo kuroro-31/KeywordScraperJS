@@ -25,6 +25,24 @@ document.addEventListener("DOMContentLoaded", () => {
       resultsContainer.appendChild(p);
     } else if (message.type === "ANALYSIS_FINISHED") {
       statusEl.textContent = "全キーワードの分析が完了しました。";
+
+      // CSVダウンロードボタンを追加
+      const downloadButton = document.createElement("button");
+      downloadButton.textContent = "CSVダウンロード";
+      downloadButton.addEventListener("click", () => {
+        const csvContent = convertToCSV(collectedResults);
+        const blob = new Blob([csvContent], {
+          type: "text/csv;charset=utf-8;",
+        });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `keyword_analysis_${new Date()
+          .toISOString()
+          .slice(0, 10)}.csv`;
+        link.click();
+        URL.revokeObjectURL(link.href);
+      });
+      resultsContainer.appendChild(downloadButton);
     }
   });
 
@@ -53,3 +71,66 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 });
+
+function downloadCSV(data) {
+  const csvContent = convertToCSV(data);
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `analysis_result_${new Date()
+    .toISOString()
+    .slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function convertToCSV(results) {
+  // ヘッダー行を作成
+  const headers = [
+    "キーワード",
+    "allintitle件数",
+    "intitle件数",
+    "Q&A件数",
+    "Q&A最高順位",
+    "無料ブログ件数",
+    "ブログ最高順位",
+    "SNS件数",
+    "SNS最高順位",
+  ];
+
+  // データ行を作成
+  const rows = results.map((result) => [
+    result.Keyword,
+    result.allintitle件数,
+    result.intitle件数,
+    result["Q&A件数"],
+    result["Q&A最高順位"],
+    result.無料ブログ件数,
+    result.ブログ最高順位,
+    result.SNS件数,
+    result.SNS最高順位,
+  ]);
+
+  // ヘッダーとデータを結合してCSV形式に変換
+  return [headers, ...rows]
+    .map((row) => row.map((cell) => `"${cell}"`).join(","))
+    .join("\n");
+}
+
+// 分析結果を表示する関数を更新
+function displayResults(results) {
+  const resultsDiv = document.getElementById("results");
+  resultsDiv.innerHTML = "";
+
+  results.forEach((result) => {
+    const resultItem = document.createElement("div");
+    resultItem.textContent = `${result.url}: ${result.result}`;
+    resultsDiv.appendChild(resultItem);
+  });
+
+  // ダウンロードボタンを追加
+  const downloadButton = document.createElement("button");
+  downloadButton.textContent = "CSVダウンロード";
+  downloadButton.addEventListener("click", () => downloadCSV(results));
+  resultsDiv.appendChild(downloadButton);
+}
