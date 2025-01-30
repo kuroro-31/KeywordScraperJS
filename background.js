@@ -6,19 +6,30 @@ let currentIndex = 0;
 
 // キーワードを順番に処理するフロー
 async function processKeywords(keywords) {
+  // 保存された結果を取得して、処理済みのキーワードを特定
+  const stored = await chrome.storage.local.get("analysisResults");
+  const processedKeywords = new Set(
+    (stored.analysisResults || []).map((result) => result.Keyword)
+  );
+
+  // 未処理のキーワードのみをフィルタリング
+  const remainingKeywords = keywords.filter(
+    (keyword) => !processedKeywords.has(keyword)
+  );
+
   const chunks = [];
-  for (let i = 0; i < keywords.length; i += 5) {
-    chunks.push(keywords.slice(i, i + 5));
+  for (let i = 0; i < remainingKeywords.length; i += 5) {
+    chunks.push(remainingKeywords.slice(i, i + 5));
   }
 
   const totalKeywords = keywords.length;
-  let processedCount = 0;
+  let processedCount = processedKeywords.size;
 
   try {
     for (let i = 0; i < chunks.length; i++) {
       if (i > 0) {
         // インターバル待機中のメッセージを表示
-        for (let waitTime = 20; waitTime > 0; waitTime--) {
+        for (let waitTime = 30; waitTime > 0; waitTime--) {
           chrome.runtime.sendMessage({
             type: "ANALYSIS_UPDATE",
             payload: {
@@ -29,11 +40,50 @@ async function processKeywords(keywords) {
           await new Promise((resolve) => setTimeout(resolve, 1000));
         }
       }
-      processedCount = await searchKeywords(
-        chunks[i],
-        processedCount,
-        totalKeywords
-      );
+      try {
+        processedCount = await searchKeywords(
+          chunks[i],
+          processedCount,
+          totalKeywords
+        );
+      } catch (error) {
+        // エラーが発生した場合は処理を中断
+        console.error("検索処理エラー:", error);
+
+        // エラー通知を送信
+        chrome.runtime.sendMessage({
+          type: "ANALYSIS_ERROR",
+          payload: {
+            error: error.message,
+            lastKeyword: chunks[i][0],
+            currentCount: processedCount,
+            totalCount: totalKeywords,
+          },
+        });
+
+        // Slack通知
+        await notifySlack(
+          `処理中にエラーが発生しました: ${error.message}`,
+          chunks[i][0],
+          processedCount,
+          totalKeywords,
+          error.url ||
+            `https://www.google.com/search?q=${encodeURIComponent(
+              chunks[i][0]
+            )}`
+        );
+
+        // エラー通知を表示
+        chrome.notifications.create({
+          type: "basic",
+          iconUrl: "icon48.png",
+          title: "エラーが発生しました",
+          message: `処理中にエラーが発生しました: ${error.message}`,
+        });
+
+        // 処理を中断
+        return;
+      }
     }
 
     // 全ての処理が完了したら完了メッセージを送信
@@ -50,39 +100,15 @@ async function processKeywords(keywords) {
     });
   } catch (error) {
     console.error("処理エラー:", error);
-
-    if (error.message === "RECAPTCHA_DETECTED") {
-      // リキャプチャエラーの場合は既に通知済み
-    } else {
-      // その他のエラーの場合
-      await notifySlack(
-        `処理中にエラーが発生しました: ${error.message}`,
-        keywords[processedCount],
-        processedCount,
-        totalKeywords,
-        error.url ||
-          `https://www.google.com/search?q=${encodeURIComponent(
-            keywords[processedCount]
-          )}` // 現在のキーワードのURLを生成
-      );
-
-      chrome.notifications.create({
-        type: "basic",
-        iconUrl: "icon48.png",
-        title: "エラーが発生しました",
-        message: `処理中にエラーが発生しました: ${error.message}`,
-      });
-
-      chrome.runtime.sendMessage({
-        type: "ANALYSIS_ERROR",
-        payload: {
-          error: error.message,
-          lastKeyword: keywords[processedCount],
-          currentCount: processedCount,
-          totalCount: totalKeywords,
-        },
-      });
-    }
+    // 上位のエラーハンドリングも追加
+    chrome.runtime.sendMessage({
+      type: "ANALYSIS_ERROR",
+      payload: {
+        error: error.message,
+        currentCount: processedCount,
+        totalCount: totalKeywords,
+      },
+    });
   }
 }
 
@@ -181,7 +207,7 @@ async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
     );
 
     // 各検索の間に十分な待機時間を設定
-    await new Promise((resolve) => setTimeout(resolve, 5000)); // 5秒待機
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     // --- 2. intitle検索 ---
     let intitleResults = await getSearchResults(
@@ -191,7 +217,7 @@ async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
       totalKeywords
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 5000)); // 5秒待機
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     // --- 3. allintitle検索 ---
     let allintitleResults = await getSearchResults(
