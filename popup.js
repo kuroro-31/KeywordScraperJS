@@ -191,6 +191,15 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     }
   });
+
+  // キーボードショートカットのイベントリスナーを追加
+  document.addEventListener("keydown", (e) => {
+    // MacのCommand + Enter または WindowsのCtrl + Enter
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault(); // デフォルトの動作を防止
+      startBtn.click(); // 分析開始ボタンをクリック
+    }
+  });
 });
 
 function convertToCSV(results) {
