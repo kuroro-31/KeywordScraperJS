@@ -29,7 +29,7 @@ async function processKeywords(keywords) {
     for (let i = 0; i < chunks.length; i++) {
       if (i > 0) {
         // インターバル待機中のメッセージを表示
-        for (let waitTime = 30; waitTime > 0; waitTime--) {
+        for (let waitTime = 60; waitTime > 0; waitTime--) {
           chrome.runtime.sendMessage({
             type: "ANALYSIS_UPDATE",
             payload: {
@@ -134,7 +134,7 @@ async function searchKeywords(keywordChunk, processedCount, totalKeywords) {
       localProcessedCount++;
 
       // 次のキーワードの前に少し待機
-      await new Promise((resolve) => setTimeout(resolve, 3000)); // 3秒待機
+      await new Promise((resolve) => setTimeout(resolve, 100)); // 100ms待機
     } catch (error) {
       console.error("検索エラー:", error);
 
@@ -207,7 +207,7 @@ async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
     );
 
     // 各検索の間に十分な待機時間を設定
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 50));
 
     // --- 2. intitle検索 ---
     let intitleResults = await getSearchResults(
@@ -217,7 +217,7 @@ async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
       totalKeywords
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 50));
 
     // --- 3. allintitle検索 ---
     let allintitleResults = await getSearchResults(
