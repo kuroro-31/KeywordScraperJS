@@ -553,3 +553,10 @@ async function handleRecaptchaError(
     console.error("reCAPTCHAエラーハンドリング中のエラー:", error);
   }
 }
+
+// 既存のコードの最後に追加
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url?.startsWith('https://www.google.com/search?')) {
+    chrome.action.openPopup();
+  }
+});

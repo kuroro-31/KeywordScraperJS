@@ -19,7 +19,8 @@
       "service_worker": "background.js"
     },
     "action": {
-      "default_popup": "popup.html"
+      "default_popup": "popup.html",
+      "show_matches": ["*://www.google.com/search?*"]
     },
     "content_scripts": [
       {
