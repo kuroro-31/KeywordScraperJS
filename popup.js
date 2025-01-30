@@ -13,7 +13,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   const clearResultsBtn = document.getElementById("clear-results-btn");
 
   // 初期状態で非表示にする
-  resultsContainer.style.display = "none";
   csvPreview.style.display = "none";
   copyCsvBtn.style.display = "none";
   clearResultsBtn.style.display = "none";
@@ -32,14 +31,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     collectedResults = stored.analysisResults;
     updateCsvPreview(collectedResults);
-
-    // 結果コンテナを更新
-    resultsContainer.innerHTML = "";
-    collectedResults.forEach((result) => {
-      const p = document.createElement("p");
-      p.textContent = `${result.Keyword} (処理時間: ${result.処理時間})`;
-      resultsContainer.appendChild(p);
-    });
   }
   if (stored.savedKeywords) {
     keywordInput.value = stored.savedKeywords;
@@ -65,7 +56,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       statusEl.textContent = `${currentKeyword}\n${progressText}`;
     } else if (message.type === "ANALYSIS_RESULT") {
       // 結果表示要素を表示
-      resultsContainer.style.display = "block";
       csvPreview.style.display = "block";
       copyCsvBtn.style.display = "block";
       clearResultsBtn.style.display = "block";
@@ -79,18 +69,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         savedKeywords: keywordInput.value,
       });
 
-      // 処理済みのキーワードをtextareaから削除
-      const currentKeywords = keywordInput.value
-        .split("\n")
-        .map((k) => k.trim())
-        .filter((k) => k !== keywordResult.Keyword && k.length > 0);
-      keywordInput.value = currentKeywords.join("\n");
-
-      // 結果を簡易表示
-      const line = `${keywordResult.Keyword} (処理時間: ${keywordResult.処理時間})`;
-      const p = document.createElement("p");
-      p.textContent = line;
-      resultsContainer.appendChild(p);
+      // 処理済みのキーワードをtextareaから削除（実際に処理されたキーワードを削除）
+      const lines = keywordInput.value.split("\n");
+      const updatedLines = lines.filter((line) => {
+        const trimmedLine = line.trim();
+        return trimmedLine !== keywordResult.Keyword && trimmedLine.length > 0;
+      });
+      keywordInput.value = updatedLines.join("\n");
 
       // CSV形式で結果を表示
       updateCsvPreview(collectedResults);
@@ -128,25 +113,18 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (confirm("新しい分析を開始します。これまでの結果をクリアしますか？")) {
         collectedResults = [];
         chrome.storage.local.remove("analysisResults");
-        resultsContainer.innerHTML = "";
         document.getElementById("csv-preview").textContent = "";
       }
     }
 
-    // キーワードを保存（後で削除するため）
+    // キーワードを保存
     window.originalKeywords = [...keywords];
 
-    if (keywords.length > 5) {
-      chrome.runtime.sendMessage({
-        type: "START_ANALYSIS",
-        payload: { keywords: keywords },
-      });
-    } else {
-      chrome.runtime.sendMessage({
-        type: "START_ANALYSIS",
-        payload: { keywords: keywords },
-      });
-    }
+    // 最初のキーワードから順番に処理するため、配列を逆順にはしない
+    chrome.runtime.sendMessage({
+      type: "START_ANALYSIS",
+      payload: { keywords: keywords },
+    });
   });
 
   // Slack Webhook URL設定の処理を追加
@@ -198,11 +176,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (confirm("保存された結果をすべてクリアしますか？")) {
       collectedResults = [];
       chrome.storage.local.remove("analysisResults");
-      resultsContainer.innerHTML = "";
       document.getElementById("csv-preview").textContent = "";
 
       // 結果表示要素を非表示
-      resultsContainer.style.display = "none";
       csvPreview.style.display = "none";
       copyCsvBtn.style.display = "none";
       clearResultsBtn.style.display = "none";

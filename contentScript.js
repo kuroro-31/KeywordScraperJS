@@ -168,9 +168,6 @@
   });
 
   function startSolving() {
-    // ... existing code ...
-    // 途中結果のダウンロード関連の処理を削除
     solve();
-    // ... existing code ...
   }
 })();

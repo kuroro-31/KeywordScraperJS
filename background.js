@@ -29,7 +29,7 @@ async function processKeywords(keywords) {
     for (let i = 0; i < chunks.length; i++) {
       if (i > 0) {
         // インターバル待機中のメッセージを表示
-        for (let waitTime = 60; waitTime > 0; waitTime--) {
+        for (let waitTime = 1; waitTime > 0; waitTime--) {
           chrome.runtime.sendMessage({
             type: "ANALYSIS_UPDATE",
             payload: {
