@@ -150,6 +150,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   // Slack Webhook URL設定の処理を追加
+  const slackSettingsSection = document.querySelector(".settings-section");
   const slackUrlInput = document.getElementById("slackWebhookUrl");
   const saveSlackUrlBtn = document.getElementById("saveSlackUrl");
 
@@ -157,6 +158,22 @@ document.addEventListener("DOMContentLoaded", async () => {
   chrome.storage.local.get("slackWebhookUrl", (result) => {
     if (result.slackWebhookUrl) {
       slackUrlInput.value = result.slackWebhookUrl;
+      // Webhook URLが存在する場合は設定セクションを非表示
+      slackSettingsSection.style.display = "none";
+    }
+  });
+
+  // 設定を表示するためのリンクを追加
+  const toggleSettingsLink = document.getElementById("toggleSettings");
+
+  toggleSettingsLink.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (slackSettingsSection.style.display === "none") {
+      slackSettingsSection.style.display = "block";
+      toggleSettingsLink.textContent = "Slack設定を隠す";
+    } else {
+      slackSettingsSection.style.display = "none";
+      toggleSettingsLink.textContent = "Slack設定を表示";
     }
   });
 
@@ -165,10 +182,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     const webhookUrl = slackUrlInput.value.trim();
     if (webhookUrl) {
       chrome.storage.local.set({ slackWebhookUrl: webhookUrl }, () => {
-        // 保存成功時の視覚的フィードバック
         saveSlackUrlBtn.textContent = "保存しました！";
         setTimeout(() => {
           saveSlackUrlBtn.textContent = "保存";
+          // 保存成功後に設定セクションを非表示
+          slackSettingsSection.style.display = "none";
+          toggleSettingsLink.textContent = "Slack設定を表示";
         }, 2000);
       });
     }
