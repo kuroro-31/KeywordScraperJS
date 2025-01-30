@@ -175,9 +175,9 @@ function convertToCSV(results) {
     result.SNS最高順位,
   ]);
 
-  // ヘッダーとデータを結合してCSV形式に変換
+  // ヘッダーとデータを結合してTSV形式に変換
   return [headers, ...rows]
-    .map((row) => row.map((cell) => `"${cell}"`).join(","))
+    .map((row) => row.map((cell) => String(cell || "")).join("\t"))
     .join("\n");
 }
 
@@ -199,7 +199,7 @@ function displayResults(results) {
   resultsDiv.appendChild(downloadButton);
 }
 
-// CSV形式のプレビューを更新する関数
+// CSV形式のプレビューを更新する関数を修正
 function updateCsvPreview(results) {
   const csvPreview = document.getElementById("csv-preview");
   const headers = [
@@ -216,10 +216,9 @@ function updateCsvPreview(results) {
 
   // ヘッダー行を追加（最初の結果の時のみ）
   if (results.length === 1) {
-    csvPreview.textContent = headers.join(",") + "\n";
+    csvPreview.textContent = headers.join("\t") + "\n"; // カンマをタブに変更
   }
 
-  // 最新の結果を追加
   const latestResult = results[results.length - 1];
   const row = [
     latestResult.Keyword,
@@ -232,8 +231,8 @@ function updateCsvPreview(results) {
     latestResult.SNS件数,
     latestResult.SNS最高順位,
   ]
-    .map((cell) => `"${cell || ""}"`)
-    .join(",");
+    .map((cell) => String(cell || "")) // nullやundefinedを空文字に変換
+    .join("\t"); // カンマをタブに変更
 
   csvPreview.textContent += row + "\n";
   csvPreview.scrollTop = csvPreview.scrollHeight; // 自動スクロール
