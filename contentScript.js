@@ -4,18 +4,24 @@
   function detectRecaptcha() {
     // 通常のリキャプチャフレーム
     const recaptchaFrame = document.querySelector('iframe[src*="recaptcha"]');
-    
+
     // Googleのsorryページの検出
-    const isSorryPage = window.location.href.includes('/sorry/index') || 
-                       document.title.includes('Sorry') ||
-                       document.querySelector('form#captcha-form');
+    const isSorryPage =
+      window.location.href.includes("/sorry/index") ||
+      document.title.includes("Sorry") ||
+      document.querySelector("form#captcha-form");
 
     if (recaptchaFrame || isSorryPage) {
+      // より詳細な情報を含めてメッセージを送信
       chrome.runtime.sendMessage({
         type: "RECAPTCHA_DETECTED",
         payload: {
-          url: window.location.href
-        }
+          url: window.location.href,
+          timestamp: new Date().toISOString(),
+          // URLからキーワードを抽出する試み
+          keyword:
+            new URLSearchParams(window.location.search).get("q") || undefined,
+        },
       });
       return true;
     }
@@ -149,5 +155,22 @@
     main();
   } else {
     window.addEventListener("load", main);
+  }
+
+  chrome.runtime.onMessage.addListener(function (
+    request,
+    sender,
+    sendResponse
+  ) {
+    if (request.action === "startSolving") {
+      startSolving();
+    }
+  });
+
+  function startSolving() {
+    // ... existing code ...
+    // 途中結果のダウンロード関連の処理を削除
+    solve();
+    // ... existing code ...
   }
 })();

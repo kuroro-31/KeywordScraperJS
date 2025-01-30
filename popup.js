@@ -39,53 +39,11 @@ document.addEventListener("DOMContentLoaded", () => {
     } else if (message.type === "ANALYSIS_FINISHED") {
       statusEl.textContent = "全キーワードの分析が完了しました。";
     } else if (message.type === "RECAPTCHA_INTERRUPT") {
-      // リキャプチャによる中断時の処理
       const { lastKeyword, currentCount, totalCount } = message.payload;
-
       statusEl.textContent = `⚠️ リキャプチャにより中断されました。\n処理済み: ${currentCount}/${totalCount}キーワード\n最後のキーワード: ${lastKeyword}`;
-
-      // 中断時用のダウンロードボタンを追加
-      const downloadButton = document.createElement("button");
-      downloadButton.textContent = "途中結果をダウンロード";
-      downloadButton.style.backgroundColor = "#ff9800"; // 警告色
-      downloadButton.addEventListener("click", () => {
-        const csvContent = convertToCSV(collectedResults);
-        const blob = new Blob([csvContent], {
-          type: "text/csv;charset=utf-8;",
-        });
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
-        link.download = `keyword_analysis_interrupted_${new Date()
-          .toISOString()
-          .slice(0, 10)}.csv`;
-        link.click();
-        URL.revokeObjectURL(link.href);
-      });
-      resultsContainer.appendChild(downloadButton);
     } else if (message.type === "ANALYSIS_ERROR") {
-      // 一般エラー時の処理
       const { error, lastKeyword, currentCount, totalCount } = message.payload;
-
       statusEl.textContent = `⚠️ エラーが発生しました。\n${error}\n処理済み: ${currentCount}/${totalCount}キーワード\n最後のキーワード: ${lastKeyword}`;
-
-      // エラー時用のダウンロードボタンを追加
-      const downloadButton = document.createElement("button");
-      downloadButton.textContent = "途中結果をダウンロード";
-      downloadButton.style.backgroundColor = "#f44336"; // エラー色
-      downloadButton.addEventListener("click", () => {
-        const csvContent = convertToCSV(collectedResults);
-        const blob = new Blob([csvContent], {
-          type: "text/csv;charset=utf-8;",
-        });
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
-        link.download = `keyword_analysis_error_${new Date()
-          .toISOString()
-          .slice(0, 10)}.csv`;
-        link.click();
-        URL.revokeObjectURL(link.href);
-      });
-      resultsContainer.appendChild(downloadButton);
     } else if (message.type === "RECAPTCHA_DETECTED") {
       showError(message.message);
     }
@@ -125,18 +83,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 });
-
-function downloadCSV(data) {
-  const csvContent = convertToCSV(data);
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = `analysis_result_${new Date()
-    .toISOString()
-    .slice(0, 10)}.csv`;
-  link.click();
-  URL.revokeObjectURL(link.href);
-}
 
 function convertToCSV(results) {
   // ヘッダー行を作成
@@ -181,12 +127,6 @@ function displayResults(results) {
     resultItem.textContent = `${result.url}: ${result.result}`;
     resultsDiv.appendChild(resultItem);
   });
-
-  // ダウンロードボタンを追加
-  const downloadButton = document.createElement("button");
-  downloadButton.textContent = "CSVダウンロード";
-  downloadButton.addEventListener("click", () => downloadCSV(results));
-  resultsDiv.appendChild(downloadButton);
 }
 
 // CSV形式のプレビューを更新する関数を修正

@@ -228,10 +228,20 @@ async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
 
     // 結果を返す前の最終待機
     await new Promise((resolve) => setTimeout(resolve, 3000)); // 3秒待機
+
+    // reCAPTCHA検出時の待機処理を追加
+    if (await checkForRecaptcha()) {
+      await new Promise((resolve) => setTimeout(resolve, 30000)); // 30秒待機
+      const stillHasRecaptcha = await checkForRecaptcha();
+      if (stillHasRecaptcha) {
+        throw new Error("RECAPTCHA_DETECTED");
+      }
+    }
+
     return keywordResult;
   } catch (error) {
     if (error.message === "RECAPTCHA_DETECTED") {
-      // エラーを上位に伝播させて処理を中断
+      await handleRecaptchaError(keyword, processedCount, totalKeywords);
       throw error;
     }
     // その他のエラーの場合は通常のエラーハンドリング
@@ -247,59 +257,69 @@ async function notifySlack(
   processedCount = 0,
   totalKeywords = 0
 ) {
-  const SLACK_WEBHOOK_URL =
-    "https://hooks.slack.com/services/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";
+  console.log("Slack通知開始:", {
+    message,
+    keyword,
+    processedCount,
+    totalKeywords,
+  });
 
-  const payload = {
-    text: "🚨 リキャプチャ検出アラート",
-    blocks: [
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `*リキャプチャが検出されました*\n${message}`,
-        },
-      },
-      {
-        type: "section",
-        fields: [
-          {
-            type: "mrkdwn",
-            text: `*最後のキーワード:*\n${keyword || "不明"}`,
-          },
-          {
-            type: "mrkdwn",
-            text: `*進捗状況:*\n${processedCount}/${totalKeywords} キーワード完了`,
-          },
-          {
-            type: "mrkdwn",
-            text: `*検出時刻:*\n${new Date().toLocaleString("ja-JP")}`,
-          },
-        ],
-      },
-    ],
-  };
+  // Webhookの環境変数化または設定ファイルからの読み込みを推奨
+  const SLACK_WEBHOOK_URL = await chrome.storage.local
+    .get("slackWebhookUrl")
+    .then((result) => result.slackWebhookUrl);
+
+  if (!SLACK_WEBHOOK_URL) {
+    console.warn("Slack Webhook URLが設定されていません");
+    return;
+  }
 
   try {
-    console.log("Slack通知を送信中...", payload);
     const response = await fetch(SLACK_WEBHOOK_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        text: "🚨 リキャプチャ検出アラート",
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `*リキャプチャが検出されました*\n${message}`,
+            },
+          },
+          {
+            type: "section",
+            fields: [
+              {
+                type: "mrkdwn",
+                text: `*最後のキーワード:*\n${keyword || "不明"}`,
+              },
+              {
+                type: "mrkdwn",
+                text: `*進捗状況:*\n${processedCount}/${totalKeywords} キーワード完了`,
+              },
+              {
+                type: "mrkdwn",
+                text: `*検出時刻:*\n${new Date().toLocaleString("ja-JP")}`,
+              },
+            ],
+          },
+        ],
+      }),
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Slack通知エラー:", errorText);
-      throw new Error(`Slack通知エラー: ${response.status} ${errorText}`);
+      throw new Error(`Slack通知エラー: ${response.status}`);
     }
 
-    console.log("Slack通知送信成功");
+    const responseText = await response.text();
+    console.log("Slack通知成功:", responseText);
   } catch (error) {
-    console.error("Slack通知送信エラー:", error);
-    // エラーを上位に伝播させない（通知の失敗は主処理を止めない）
+    console.error("Slack通知エラー:", error);
+    // エラーを上位に伝播させない
   }
 }
 
@@ -421,3 +441,58 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     processKeywords(keywordQueue);
   }
 });
+
+// リキャプチャ検出時のメッセージ処理を修正
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "RECAPTCHA_DETECTED") {
+    // Slackに通知
+    notifySlack(
+      "リキャプチャが検出されました。手動での対応が必要です。",
+      message.keyword || "不明",
+      message.currentCount || 0,
+      message.totalCount || 0
+    );
+
+    // ポップアップに通知
+    chrome.runtime.sendMessage({
+      type: "RECAPTCHA_INTERRUPT",
+      payload: {
+        lastKeyword: message.keyword,
+        currentCount: message.currentCount,
+        totalCount: message.totalCount,
+      },
+    });
+  }
+  // 他のメッセージ処理...
+});
+
+// reCAPTCHAエラーハンドリング関数
+async function handleRecaptchaError(keyword, processedCount, totalKeywords) {
+  try {
+    await notifySlack(
+      "検索が一時停止されました。手動での対応が必要です。",
+      keyword,
+      processedCount,
+      totalKeywords
+    );
+
+    chrome.notifications.create({
+      type: "basic",
+      iconUrl: "icon48.png", // アイコンファイルの存在を確認
+      title: "リキャプチャが検出されました",
+      message:
+        "検索が一時停止されました。これまでの結果をダウンロードできます。",
+    });
+
+    chrome.runtime.sendMessage({
+      type: "RECAPTCHA_INTERRUPT",
+      payload: {
+        lastKeyword: keyword,
+        currentCount: processedCount,
+        totalCount: totalKeywords,
+      },
+    });
+  } catch (error) {
+    console.error("reCAPTCHAエラーハンドリング中のエラー:", error);
+  }
+}
