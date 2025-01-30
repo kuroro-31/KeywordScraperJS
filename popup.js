@@ -8,19 +8,33 @@ document.addEventListener("DOMContentLoaded", async () => {
   const clearKeywordsBtn = document.getElementById("clearKeywordsBtn");
   const statusEl = document.getElementById("status");
   const resultsContainer = document.getElementById("results-container");
+  const csvPreview = document.getElementById("csv-preview");
+  const copyCsvBtn = document.getElementById("copy-csv-btn");
+  const clearResultsBtn = document.getElementById("clear-results-btn");
+
+  // 初期状態で非表示にする
+  resultsContainer.style.display = "none";
+  csvPreview.style.display = "none";
+  copyCsvBtn.style.display = "none";
+  clearResultsBtn.style.display = "none";
 
   // 保存された結果とキーワードを復元
   const stored = await chrome.storage.local.get([
     "analysisResults",
     "savedKeywords",
   ]);
-  if (stored.analysisResults) {
+  if (stored.analysisResults && stored.analysisResults.length > 0) {
+    // 結果がある場合は表示する
+    resultsContainer.style.display = "block";
+    csvPreview.style.display = "block";
+    copyCsvBtn.style.display = "block";
+    clearResultsBtn.style.display = "block";
+
     collectedResults = stored.analysisResults;
-    // 保存された全ての結果を表示
     updateCsvPreview(collectedResults);
 
-    // 結果コンテナも更新
-    resultsContainer.innerHTML = ""; // 既存の内容をクリア
+    // 結果コンテナを更新
+    resultsContainer.innerHTML = "";
     collectedResults.forEach((result) => {
       const p = document.createElement("p");
       p.textContent = `${result.Keyword} (処理時間: ${result.処理時間})`;
@@ -50,6 +64,12 @@ document.addEventListener("DOMContentLoaded", async () => {
       const { currentKeyword, progressText } = message.payload;
       statusEl.textContent = `${currentKeyword}\n${progressText}`;
     } else if (message.type === "ANALYSIS_RESULT") {
+      // 結果表示要素を表示
+      resultsContainer.style.display = "block";
+      csvPreview.style.display = "block";
+      copyCsvBtn.style.display = "block";
+      clearResultsBtn.style.display = "block";
+
       const { keywordResult, progressInfo } = message.payload;
       collectedResults.push(keywordResult);
 
@@ -161,6 +181,12 @@ document.addEventListener("DOMContentLoaded", async () => {
       chrome.storage.local.remove("analysisResults");
       resultsContainer.innerHTML = "";
       document.getElementById("csv-preview").textContent = "";
+
+      // 結果表示要素を非表示
+      resultsContainer.style.display = "none";
+      csvPreview.style.display = "none";
+      copyCsvBtn.style.display = "none";
+      clearResultsBtn.style.display = "none";
     }
   });
 });
