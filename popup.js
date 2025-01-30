@@ -18,6 +18,13 @@ document.addEventListener("DOMContentLoaded", () => {
       // 結果を保存
       collectedResults.push(keywordResult);
 
+      // 処理済みのキーワードをtextareaから削除
+      const currentKeywords = keywordInput.value
+        .split("\n")
+        .map((k) => k.trim())
+        .filter((k) => k !== keywordResult.Keyword && k.length > 0);
+      keywordInput.value = currentKeywords.join("\n");
+
       // 結果を簡易表示
       const line = `${keywordResult.Keyword} (処理時間: ${keywordResult.処理時間})`;
       const p = document.createElement("p");
@@ -55,15 +62,6 @@ document.addEventListener("DOMContentLoaded", () => {
         URL.revokeObjectURL(link.href);
       });
       resultsContainer.appendChild(downloadButton);
-
-      // 再開ボタンを追加
-      const restartButton = document.createElement("button");
-      restartButton.textContent = "最初から再開";
-      restartButton.style.marginLeft = "10px";
-      restartButton.addEventListener("click", () => {
-        location.reload(); // ページをリロード
-      });
-      resultsContainer.appendChild(restartButton);
     } else if (message.type === "ANALYSIS_ERROR") {
       // 一般エラー時の処理
       const { error, lastKeyword, currentCount, totalCount } = message.payload;
@@ -88,15 +86,6 @@ document.addEventListener("DOMContentLoaded", () => {
         URL.revokeObjectURL(link.href);
       });
       resultsContainer.appendChild(downloadButton);
-
-      // 再開ボタンを追加
-      const restartButton = document.createElement("button");
-      restartButton.textContent = "最初から再開";
-      restartButton.style.marginLeft = "10px";
-      restartButton.addEventListener("click", () => {
-        location.reload();
-      });
-      resultsContainer.appendChild(restartButton);
     } else if (message.type === "RECAPTCHA_DETECTED") {
       showError(message.message);
     }
@@ -120,14 +109,15 @@ document.addEventListener("DOMContentLoaded", () => {
     resultsContainer.innerHTML = "";
     statusEl.textContent = "キーワード分析を開始します...";
 
+    // キーワードを保存（後で削除するため）
+    window.originalKeywords = [...keywords];
+
     if (keywords.length > 5) {
-      // 5個以上の場合は新しい分割処理を使用
       chrome.runtime.sendMessage({
         type: "START_ANALYSIS",
         payload: { keywords: keywords },
       });
     } else {
-      // 5個以下の場合も同じメッセージタイプを使用
       chrome.runtime.sendMessage({
         type: "START_ANALYSIS",
         payload: { keywords: keywords },
