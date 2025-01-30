@@ -27,7 +27,7 @@
         "js": [
           "constants.js",
           "recaptcha.js",
-          "content_script.js"
+          "contentScript.js"
         ]
       }
     ]

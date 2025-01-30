@@ -91,55 +91,25 @@ async function searchKeywords(keywordChunk, processedCount, totalKeywords) {
   for (const keyword of keywordChunk) {
     try {
       console.log("現在の検索キーワード:", keyword);
-      const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(
-        keyword
-      )}`;
 
-      // タブを作成して検索結果を取得
-      const results = await getSearchResults(
-        searchUrl,
+      // searchSingleKeywordの結果を待つ
+      const result = await searchSingleKeyword(
         keyword,
         localProcessedCount,
         totalKeywords
       );
-      console.log("検索結果解析完了:", results);
+      console.log("キーワード検索完了:", keyword, result);
 
       // カウンターをインクリメント
       localProcessedCount++;
 
-      // 結果を送信
-      chrome.runtime.sendMessage({
-        type: "ANALYSIS_RESULT",
-        payload: {
-          keywordResult: {
-            Keyword: keyword,
-            ...results,
-          },
-          progressInfo: {
-            current: localProcessedCount,
-            total: totalKeywords,
-            processingTime: "1.0",
-          },
-        },
-      });
-
-      // 進捗状況の更新メッセージを送信
-      chrome.runtime.sendMessage({
-        type: "ANALYSIS_UPDATE",
-        payload: {
-          currentKeyword: keyword,
-          progressText: `処理中: ${localProcessedCount}/${totalKeywords}キーワード完了`,
-        },
-      });
-
       // 次のキーワードの前に少し待機
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 3000)); // 3秒待機
     } catch (error) {
       console.error("検索エラー:", error);
 
-      // リキャプチャ検出時の処理を強化
       if (error.message === "RECAPTCHA_DETECTED") {
-        // Slack通知を送信
+        // リキャプチャ検出時の処理
         await notifySlack(
           "検索が一時停止されました。手動での対応が必要です。",
           keyword,
@@ -165,8 +135,10 @@ async function searchKeywords(keywordChunk, processedCount, totalKeywords) {
             totalCount: totalKeywords,
           },
         });
+        throw error;
       }
-      throw error; // エラーを上位に伝播
+      // その他のエラーの場合も上位に伝播
+      throw error;
     }
   }
   return localProcessedCount;
@@ -196,6 +168,9 @@ async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
       totalKeywords
     );
 
+    // 各検索の間に十分な待機時間を設定
+    await new Promise((resolve) => setTimeout(resolve, 5000)); // 5秒待機
+
     // --- 2. intitle検索 ---
     let intitleUrl =
       "https://www.google.com/search?q=intitle%3A" +
@@ -206,6 +181,8 @@ async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
       processedCount,
       totalKeywords
     );
+
+    await new Promise((resolve) => setTimeout(resolve, 5000)); // 5秒待機
 
     // --- 3. allintitle検索 ---
     let allintitleUrl =
@@ -249,8 +226,9 @@ async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
       },
     });
 
-    // 連続で叩くとGoogleにブロックされやすいので適宜待機を入れる
-    await new Promise((resolve) => setTimeout(resolve, 2000)); // 2秒待機
+    // 結果を返す前の最終待機
+    await new Promise((resolve) => setTimeout(resolve, 3000)); // 3秒待機
+    return keywordResult;
   } catch (error) {
     if (error.message === "RECAPTCHA_DETECTED") {
       // エラーを上位に伝播させて処理を中断
@@ -258,6 +236,7 @@ async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
     }
     // その他のエラーの場合は通常のエラーハンドリング
     console.error("検索エラー:", error);
+    throw error; // エラーを再スロー
   }
 }
 
@@ -327,9 +306,13 @@ async function notifySlack(
 // Google検索URLを開き、contentScriptからDOM解析結果を受け取る
 function getSearchResults(searchUrl, keyword, processedCount, totalKeywords) {
   return new Promise((resolve, reject) => {
+    let isResolved = false;
+
     chrome.tabs.create({ url: searchUrl, active: false }, (tab) => {
       const onMessageListener = (message, sender, sendResponse) => {
+        if (isResolved) return;
         if (message.type === "DOM_PARSED" && sender.tab.id === tab.id) {
+          isResolved = true;
           let data = message.payload;
           chrome.tabs.remove(tab.id);
           chrome.runtime.onMessage.removeListener(onMessageListener);
@@ -338,37 +321,9 @@ function getSearchResults(searchUrl, keyword, processedCount, totalKeywords) {
           message.type === "RECAPTCHA_DETECTED" &&
           sender.tab.id === tab.id
         ) {
-          // リキャプチャ検出時の処理
+          isResolved = true;
           chrome.tabs.remove(tab.id);
           chrome.runtime.onMessage.removeListener(onMessageListener);
-
-          // 通知を表示
-          chrome.notifications.create({
-            type: "basic",
-            iconUrl: "icon48.png",
-            title: "リキャプチャが検出されました",
-            message:
-              "検索が一時停止されました。これまでの結果をダウンロードできます。",
-          });
-
-          // Slackに通知
-          notifySlack(
-            "検索が一時停止されました。手動での対応が必要です。",
-            keyword,
-            processedCount,
-            totalKeywords
-          );
-
-          // 中断メッセージを送信
-          chrome.runtime.sendMessage({
-            type: "RECAPTCHA_INTERRUPT",
-            payload: {
-              lastKeyword: keyword,
-              currentCount: processedCount,
-              totalCount: totalKeywords,
-            },
-          });
-
           reject(new Error("RECAPTCHA_DETECTED"));
         }
       };
@@ -377,20 +332,21 @@ function getSearchResults(searchUrl, keyword, processedCount, totalKeywords) {
       chrome.tabs.onUpdated.addListener(function onUpdated(tabId, changeInfo) {
         if (tabId === tab.id && changeInfo.status === "complete") {
           chrome.tabs.onUpdated.removeListener(onUpdated);
-          // タブの読み込みが完了したら少し待ってからチェック
+
+          // DOM解析のための待機時間
           setTimeout(() => {
-            // 30秒後にタイムアウト
-            setTimeout(() => {
-              chrome.tabs.get(tab.id, (tabInfo) => {
-                if (tabInfo) {
-                  // タブがまだ存在する場合
+            if (!isResolved) {
+              // タイムアウト処理
+              setTimeout(() => {
+                if (!isResolved) {
+                  isResolved = true;
                   chrome.tabs.remove(tab.id);
                   chrome.runtime.onMessage.removeListener(onMessageListener);
-                  reject(new Error("RECAPTCHA_DETECTED"));
+                  reject(new Error("TIMEOUT"));
                 }
-              });
-            }, 30000);
-          }, 1000);
+              }, 30000); // 30秒のタイムアウト
+            }
+          }, 3000); // 3秒の初期待機
         }
       });
 
