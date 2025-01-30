@@ -128,44 +128,43 @@ async function searchKeywords(keywordChunk, processedCount, totalKeywords) {
         localProcessedCount,
         totalKeywords
       );
+
+      // 結果を保存
+      const stored = await chrome.storage.local.get("analysisResults");
+      const results = stored.analysisResults || [];
+      results.push(result);
+      await chrome.storage.local.set({ analysisResults: results });
+
       console.log("キーワード検索完了:", keyword, result);
 
       // カウンターをインクリメント
       localProcessedCount++;
 
-      // 次のキーワードの前に少し待機
-      await new Promise((resolve) => setTimeout(resolve, 100)); // 100ms待機
+      // 次のキーワードの前に待機時間を延長
+      await new Promise((resolve) => setTimeout(resolve, 2000)); // 2秒待機に変更
     } catch (error) {
       console.error("検索エラー:", error);
 
       if (error.message === "RECAPTCHA_DETECTED") {
-        // リキャプチャ検出時の処理
-        await notifySlack(
-          "検索が一時停止されました。手動での対応が必要です。",
+        // リキャプチャ検出時の処理を改善
+        await handleRecaptchaError(
           keyword,
           localProcessedCount,
           totalKeywords,
           error.url || "URL不明"
         );
 
-        // 通知を表示
-        chrome.notifications.create({
-          type: "basic",
-          iconUrl: "icon48.png",
-          title: "リキャプチャが検出されました",
-          message:
-            "検索が一時停止されました。これまでの結果をダウンロードできます。",
-        });
-
-        // 中断メッセージを送信
+        // 現在までの結果を保存
         chrome.runtime.sendMessage({
-          type: "RECAPTCHA_INTERRUPT",
+          type: "SAVE_PARTIAL_RESULTS",
           payload: {
             lastKeyword: keyword,
-            currentCount: localProcessedCount,
-            totalCount: totalKeywords,
+            processedCount: localProcessedCount,
           },
         });
+
+        // エラーを投げる前に一時停止
+        await new Promise((resolve) => setTimeout(resolve, 5000));
         throw error;
       }
       // その他のエラーの場合も上位に伝播
@@ -175,19 +174,32 @@ async function searchKeywords(keywordChunk, processedCount, totalKeywords) {
   return localProcessedCount;
 }
 
+// searchSingleKeyword関数を修正
 async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
-  // 最初にURLを定義
-  const normalUrl =
-    "https://www.google.com/search?q=" + encodeURIComponent(keyword);
-  const intitleUrl =
-    "https://www.google.com/search?q=intitle%3A" + encodeURIComponent(keyword);
-  const allintitleUrl =
-    "https://www.google.com/search?q=allintitle%3A" +
-    encodeURIComponent(keyword);
-
   try {
+    // URLエンコードを確実に行う
+    const encodedKeyword = encodeURIComponent(keyword || "");
+    if (!encodedKeyword) {
+      throw new Error("無効なキーワードです");
+    }
+
+    // 最初にURLを定義
+    const normalUrl = `https://www.google.com/search?q=${encodedKeyword}`;
+    const intitleUrl = `https://www.google.com/search?q=intitle%3A${encodedKeyword}`;
+    const allintitleUrl = `https://www.google.com/search?q=allintitle%3A${encodedKeyword}`;
+
+    // URLの妥当性チェック
+    try {
+      new URL(normalUrl);
+      new URL(intitleUrl);
+      new URL(allintitleUrl);
+    } catch (urlError) {
+      throw new Error(`無効なURL: ${urlError.message}`);
+    }
+
     const startTime = Date.now();
 
+    // 進捗状況の更新
     chrome.runtime.sendMessage({
       type: "ANALYSIS_UPDATE",
       payload: {
@@ -230,9 +242,9 @@ async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
     const endTime = Date.now();
     const processingTime = ((endTime - startTime) / 1000).toFixed(1);
 
-    // 取得結果を集約
-    let keywordResult = {
-      Keyword: keyword,
+    // 結果のnull/undefinedチェック
+    return {
+      Keyword: keyword || "",
       allintitle件数: allintitleResults?.totalHitCount || 0,
       intitle件数: intitleResults?.totalHitCount || 0,
       "Q&A件数": normalResults?.QA_count || 0,
@@ -244,36 +256,27 @@ async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
       sns_details: normalResults?.sns_details || {},
       処理時間: `${processingTime}秒`,
     };
-
-    // ポップアップへ結果を送信
-    chrome.runtime.sendMessage({
-      type: "ANALYSIS_RESULT",
-      payload: {
-        keywordResult,
-        progressInfo: {
-          current: processedCount + 1,
-          total: totalKeywords,
-          processingTime,
-        },
-      },
+  } catch (error) {
+    console.error("検索エラー:", error, {
+      keyword,
+      processedCount,
+      totalKeywords,
     });
 
-    return keywordResult;
-  } catch (error) {
-    console.error("検索エラー:", error);
+    // エラーメッセージを改善
+    const errorMessage = error.message || "不明なエラーが発生しました";
+    const enhancedError = new Error(errorMessage);
+    enhancedError.url =
+      error.url ||
+      `https://www.google.com/search?q=${encodeURIComponent(keyword || "")}`;
+    enhancedError.details = {
+      keyword,
+      processedCount,
+      totalKeywords,
+      timestamp: new Date().toISOString(),
+    };
 
-    // エラーオブジェクトにURLを追加
-    error.url = normalUrl; // 現在の検索URL
-
-    if (error.message === "RECAPTCHA_DETECTED") {
-      await handleRecaptchaError(
-        keyword,
-        processedCount,
-        totalKeywords,
-        normalUrl // 現在の検索URL
-      );
-    }
-    throw error;
+    throw enhancedError;
   }
 }
 
@@ -498,7 +501,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // 他のメッセージ処理...
 });
 
-// reCAPTCHAエラーハンドリング関数
+// handleRecaptchaError関数を改善
 async function handleRecaptchaError(
   keyword,
   processedCount,
@@ -506,28 +509,44 @@ async function handleRecaptchaError(
   url
 ) {
   try {
+    // Slack通知
     await notifySlack(
-      "検索が一時停止されました。手動での対応が必要です。",
+      "検索が一時停止されました。reCAPTCHAによる確認が必要です。",
       keyword,
       processedCount,
       totalKeywords,
       url
     );
 
+    // 通知を表示
     chrome.notifications.create({
       type: "basic",
-      iconUrl: "icon48.png", // アイコンファイルの存在を確認
-      title: "リキャプチャが検出されました",
-      message:
-        "検索が一時停止されました。これまでの結果をダウンロードできます。",
+      iconUrl: "icon48.png",
+      title: "検索が一時停止されました",
+      message: "reCAPTCHAによる確認が必要です。手動で対応してください。",
+      priority: 2,
+      requireInteraction: true,
     });
 
+    // ポップアップに通知
     chrome.runtime.sendMessage({
       type: "RECAPTCHA_INTERRUPT",
       payload: {
         lastKeyword: keyword,
         currentCount: processedCount,
         totalCount: totalKeywords,
+        url: url,
+        timestamp: new Date().toISOString(),
+      },
+    });
+
+    // 一時停止状態を保存
+    await chrome.storage.local.set({
+      pausedState: {
+        lastKeyword: keyword,
+        processedCount: processedCount,
+        totalKeywords: totalKeywords,
+        timestamp: new Date().toISOString(),
       },
     });
   } catch (error) {

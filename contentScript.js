@@ -65,39 +65,46 @@
 
       searchItems.forEach((item) => {
         const link = item.querySelector("a");
-        if (!link) return;
+        if (!link || !link.href) return;
 
-        const url = link.href;
-        const domain = new URL(url).hostname.toLowerCase();
+        try {
+          // URLの妥当性をチェック
+          const url = new URL(link.href);
+          const domain = url.hostname.toLowerCase();
 
-        // Q&Aサイトのチェック
-        if (QA_SITES.some((site) => domain.includes(site))) {
-          QA_count++;
-          if (!QA_highestRank || rank < QA_highestRank) {
-            QA_highestRank = rank;
-          }
-        }
-
-        // ブログサイトのチェック
-        if (BLOG_SITES.some((site) => domain.includes(site))) {
-          Blog_count++;
-          if (!Blog_highestRank || rank < Blog_highestRank) {
-            Blog_highestRank = rank;
-          }
-        }
-
-        // SNSサイトのチェック
-        Object.entries(SNS_SITES).forEach(([platform, domains]) => {
-          if (domains.some((site) => domain.includes(site))) {
-            SNS_count++;
-            sns_details[platform]++;
-            if (!SNS_highestRank || rank < SNS_highestRank) {
-              SNS_highestRank = rank;
+          // Q&Aサイトのチェック
+          if (QA_SITES.some((site) => domain.includes(site))) {
+            QA_count++;
+            if (!QA_highestRank || rank < QA_highestRank) {
+              QA_highestRank = rank;
             }
           }
-        });
 
-        rank++;
+          // ブログサイトのチェック
+          if (BLOG_SITES.some((site) => domain.includes(site))) {
+            Blog_count++;
+            if (!Blog_highestRank || rank < Blog_highestRank) {
+              Blog_highestRank = rank;
+            }
+          }
+
+          // SNSサイトのチェック
+          Object.entries(SNS_SITES).forEach(([platform, domains]) => {
+            if (domains.some((site) => domain.includes(site))) {
+              SNS_count++;
+              sns_details[platform]++;
+              if (!SNS_highestRank || rank < SNS_highestRank) {
+                SNS_highestRank = rank;
+              }
+            }
+          });
+
+          rank++;
+        } catch (urlError) {
+          console.warn("無効なURL:", link.href, urlError);
+          // 無効なURLの場合はスキップして次の結果へ
+          return;
+        }
       });
 
       return {
@@ -112,7 +119,12 @@
       };
     } catch (error) {
       console.error("解析エラー:", error);
-      throw error;
+      // エラー情報を詳細化
+      const enhancedError = new Error(`解析エラー: ${error.message}`);
+      enhancedError.originalError = error;
+      enhancedError.url = window.location.href;
+      enhancedError.timestamp = new Date().toISOString();
+      throw enhancedError;
     }
   }
 
