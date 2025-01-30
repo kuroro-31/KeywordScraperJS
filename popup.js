@@ -1,12 +1,48 @@
 // popup.js
-document.addEventListener("DOMContentLoaded", () => {
+// グローバル変数として定義
+let collectedResults = [];
+
+document.addEventListener("DOMContentLoaded", async () => {
   const keywordInput = document.getElementById("keywordInput");
   const startBtn = document.getElementById("startBtn");
+  const clearKeywordsBtn = document.getElementById("clearKeywordsBtn");
   const statusEl = document.getElementById("status");
   const resultsContainer = document.getElementById("results-container");
 
-  // 分析結果を蓄積して表示する
-  let collectedResults = [];
+  // 保存された結果とキーワードを復元
+  const stored = await chrome.storage.local.get([
+    "analysisResults",
+    "savedKeywords",
+  ]);
+  if (stored.analysisResults) {
+    collectedResults = stored.analysisResults;
+    // 保存された全ての結果を表示
+    updateCsvPreview(collectedResults);
+
+    // 結果コンテナも更新
+    resultsContainer.innerHTML = ""; // 既存の内容をクリア
+    collectedResults.forEach((result) => {
+      const p = document.createElement("p");
+      p.textContent = `${result.Keyword} (処理時間: ${result.処理時間})`;
+      resultsContainer.appendChild(p);
+    });
+  }
+  if (stored.savedKeywords) {
+    keywordInput.value = stored.savedKeywords;
+  }
+
+  // キーワード入力の変更を監視して保存
+  keywordInput.addEventListener("input", () => {
+    chrome.storage.local.set({ savedKeywords: keywordInput.value });
+  });
+
+  // キーワードクリアボタンの処理
+  clearKeywordsBtn.addEventListener("click", () => {
+    if (confirm("入力されたキーワードをクリアしますか？")) {
+      keywordInput.value = "";
+      chrome.storage.local.remove("savedKeywords");
+    }
+  });
 
   // background.js からのメッセージを受け取って結果表示を更新
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -15,8 +51,13 @@ document.addEventListener("DOMContentLoaded", () => {
       statusEl.textContent = `${currentKeyword}\n${progressText}`;
     } else if (message.type === "ANALYSIS_RESULT") {
       const { keywordResult, progressInfo } = message.payload;
-      // 結果を保存
       collectedResults.push(keywordResult);
+
+      // 結果とキーワードの状態を保存
+      chrome.storage.local.set({
+        analysisResults: collectedResults,
+        savedKeywords: keywordInput.value,
+      });
 
       // 処理済みのキーワードをtextareaから削除
       const currentKeywords = keywordInput.value
@@ -62,10 +103,15 @@ document.addEventListener("DOMContentLoaded", () => {
       .map((k) => k.trim())
       .filter((k) => k.length > 1);
 
-    // 事前に表示リセット
-    collectedResults = [];
-    resultsContainer.innerHTML = "";
-    statusEl.textContent = "キーワード分析を開始します...";
+    // 新規分析開始時に結果をクリアするかどうかを確認
+    if (collectedResults.length > 0) {
+      if (confirm("新しい分析を開始します。これまでの結果をクリアしますか？")) {
+        collectedResults = [];
+        chrome.storage.local.remove("analysisResults");
+        resultsContainer.innerHTML = "";
+        document.getElementById("csv-preview").textContent = "";
+      }
+    }
 
     // キーワードを保存（後で削除するため）
     window.originalKeywords = [...keywords];
@@ -105,6 +151,16 @@ document.addEventListener("DOMContentLoaded", () => {
           saveSlackUrlBtn.textContent = "保存";
         }, 2000);
       });
+    }
+  });
+
+  // 結果をクリアするボタンを追加
+  document.getElementById("clear-results-btn").addEventListener("click", () => {
+    if (confirm("保存された結果をすべてクリアしますか？")) {
+      collectedResults = [];
+      chrome.storage.local.remove("analysisResults");
+      resultsContainer.innerHTML = "";
+      document.getElementById("csv-preview").textContent = "";
     }
   });
 });
@@ -169,27 +225,29 @@ function updateCsvPreview(results) {
     "SNS最高順位",
   ];
 
-  // ヘッダー行を追加（最初の結果の時のみ）
-  if (results.length === 1) {
-    csvPreview.textContent = headers.join("\t") + "\n"; // カンマをタブに変更
-  }
+  // 全ての結果を表示するように変更
+  let csvContent = headers.join("\t") + "\n";
 
-  const latestResult = results[results.length - 1];
-  const row = [
-    latestResult.Keyword,
-    latestResult.allintitle件数,
-    latestResult.intitle件数,
-    latestResult["Q&A件数"],
-    latestResult["Q&A最高順位"],
-    latestResult.無料ブログ件数,
-    latestResult.ブログ最高順位,
-    latestResult.SNS件数,
-    latestResult.SNS最高順位,
-  ]
-    .map((cell) => String(cell || "")) // nullやundefinedを空文字に変換
-    .join("\t"); // カンマをタブに変更
+  // 全ての結果をループで処理
+  results.forEach((result) => {
+    const row = [
+      result.Keyword,
+      result.allintitle件数,
+      result.intitle件数,
+      result["Q&A件数"],
+      result["Q&A最高順位"],
+      result.無料ブログ件数,
+      result.ブログ最高順位,
+      result.SNS件数,
+      result.SNS最高順位,
+    ]
+      .map((cell) => String(cell || "")) // nullやundefinedを空文字に変換
+      .join("\t");
 
-  csvPreview.textContent += row + "\n";
+    csvContent += row + "\n";
+  });
+
+  csvPreview.textContent = csvContent;
   csvPreview.scrollTop = csvPreview.scrollHeight; // 自動スクロール
 }
 
