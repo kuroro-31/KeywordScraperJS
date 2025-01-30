@@ -177,72 +177,45 @@ async function searchKeywords(keywordChunk, processedCount, totalKeywords) {
 // searchSingleKeyword関数を修正
 async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
   try {
-    // URLエンコードを確実に行う
-    const encodedKeyword = encodeURIComponent(keyword || "");
-    if (!encodedKeyword) {
-      throw new Error("無効なキーワードです");
-    }
-
-    // 最初にURLを定義
-    const normalUrl = `https://www.google.com/search?q=${encodedKeyword}`;
-    const intitleUrl = `https://www.google.com/search?q=intitle%3A${encodedKeyword}`;
-    const allintitleUrl = `https://www.google.com/search?q=allintitle%3A${encodedKeyword}`;
-
-    // URLの妥当性チェック
-    try {
-      new URL(normalUrl);
-      new URL(intitleUrl);
-      new URL(allintitleUrl);
-    } catch (urlError) {
-      throw new Error(`無効なURL: ${urlError.message}`);
-    }
-
     const startTime = Date.now();
 
-    // 進捗状況の更新
-    chrome.runtime.sendMessage({
-      type: "ANALYSIS_UPDATE",
-      payload: {
-        currentKeyword: keyword,
-        progressText: `処理中: ${
-          processedCount + 1
-        }/${totalKeywords}キーワード目`,
-      },
+    // 検索URLを構築
+    const normalUrl = `https://www.google.com/search?q=${encodeURIComponent(
+      keyword
+    )}`;
+    const intitleUrl = `https://www.google.com/search?q=intitle:${encodeURIComponent(
+      keyword
+    )}`;
+    const allintitleUrl = `https://www.google.com/search?q=allintitle:${encodeURIComponent(
+      keyword
+    )}`;
+
+    // 現在のタブを取得
+    const [tab] = await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
     });
 
-    // --- 1. 通常検索 ---
-    let normalResults = await getSearchResults(
-      normalUrl,
-      keyword,
-      processedCount,
-      totalKeywords
-    );
+    // --- 1. 通常の検索 ---
+    await chrome.tabs.update(tab.id, { url: normalUrl });
+    let normalResults = await waitForSearchResults(tab.id);
 
     // 各検索の間に十分な待機時間を設定
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     // --- 2. intitle検索 ---
-    let intitleResults = await getSearchResults(
-      intitleUrl,
-      keyword,
-      processedCount,
-      totalKeywords
-    );
+    await chrome.tabs.update(tab.id, { url: intitleUrl });
+    let intitleResults = await waitForSearchResults(tab.id);
 
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     // --- 3. allintitle検索 ---
-    let allintitleResults = await getSearchResults(
-      allintitleUrl,
-      keyword,
-      processedCount,
-      totalKeywords
-    );
+    await chrome.tabs.update(tab.id, { url: allintitleUrl });
+    let allintitleResults = await waitForSearchResults(tab.id);
 
     const endTime = Date.now();
     const processingTime = ((endTime - startTime) / 1000).toFixed(1);
 
-    // 結果のnull/undefinedチェック
     return {
       Keyword: keyword || "",
       allintitle件数: allintitleResults?.totalHitCount || 0,
@@ -257,27 +230,34 @@ async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
       処理時間: `${processingTime}秒`,
     };
   } catch (error) {
-    console.error("検索エラー:", error, {
-      keyword,
-      processedCount,
-      totalKeywords,
-    });
+    console.error("検索エラー:", error);
+    throw error;
+  }
+}
 
-    // エラーメッセージを改善
-    const errorMessage = error.message || "不明なエラーが発生しました";
-    const enhancedError = new Error(errorMessage);
-    enhancedError.url =
-      error.url ||
-      `https://www.google.com/search?q=${encodeURIComponent(keyword || "")}`;
-    enhancedError.details = {
-      keyword,
-      processedCount,
-      totalKeywords,
-      timestamp: new Date().toISOString(),
+// 検索結果を待機する関数
+function waitForSearchResults(tabId) {
+  return new Promise((resolve, reject) => {
+    const onMessageListener = (message, sender) => {
+      if (sender.tab.id === tabId) {
+        if (message.type === "DOM_PARSED") {
+          chrome.runtime.onMessage.removeListener(onMessageListener);
+          resolve(message.payload);
+        } else if (message.type === "RECAPTCHA_DETECTED") {
+          chrome.runtime.onMessage.removeListener(onMessageListener);
+          reject(new Error("RECAPTCHA_DETECTED"));
+        }
+      }
     };
 
-    throw enhancedError;
-  }
+    chrome.runtime.onMessage.addListener(onMessageListener);
+
+    // タイムアウト設定
+    setTimeout(() => {
+      chrome.runtime.onMessage.removeListener(onMessageListener);
+      reject(new Error("TIMEOUT"));
+    }, 30000);
+  });
 }
 
 // リキャプチャ検出時のSlack通知関数
@@ -556,7 +536,44 @@ async function handleRecaptchaError(
 
 // 既存のコードの最後に追加
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.url?.startsWith('https://www.google.com/search?')) {
+  if (
+    changeInfo.status === "complete" &&
+    tab.url?.startsWith("https://www.google.com/search?")
+  ) {
     chrome.action.openPopup();
   }
+});
+
+// キーワード検索を実行する関数を修正
+function searchKeyword(keyword) {
+  // 現在のタブを取得
+  chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+    const currentTab = tabs[0];
+
+    // スクリプトを実行
+    chrome.scripting.executeScript({
+      target: { tabId: currentTab.id },
+      func: (keyword) => {
+        // Google検索フォームの要素を取得
+        const searchInput = document.querySelector('input[name="q"]');
+        const searchForm = document.querySelector('form[role="search"]');
+
+        if (searchInput && searchForm) {
+          // 検索フォームに値を設定
+          searchInput.value = keyword;
+          // フォームをサブミット
+          searchForm.submit();
+        }
+      },
+      args: [keyword],
+    });
+  });
+}
+
+// メッセージリスナーでsearchKeyword関数を呼び出す
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === "searchKeyword") {
+    searchKeyword(request.keyword);
+  }
+  // ... 他のメッセージハンドリング ...
 });

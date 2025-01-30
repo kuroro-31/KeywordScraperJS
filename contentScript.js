@@ -182,4 +182,26 @@
   function startSolving() {
     solve();
   }
+
+  // 検索キーワードを入力して検索を実行する関数を追加
+  function executeSearch(keyword) {
+    // 検索フォームを取得
+    const searchInput = document.querySelector('textarea[name="q"]');
+    const searchForm = document.querySelector("form");
+
+    if (searchInput && searchForm) {
+      // 検索キーワードを設定
+      searchInput.value = keyword;
+
+      // フォームをサブミット
+      searchForm.submit();
+    }
+  }
+
+  // メッセージリスナーを追加
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === "searchKeyword") {
+      executeSearch(message.keyword);
+    }
+  });
 })();

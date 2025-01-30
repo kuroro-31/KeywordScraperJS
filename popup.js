@@ -108,15 +108,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       .map((k) => k.trim())
       .filter((k) => k.length > 1);
 
-    // 新規分析開始時に結果をクリアするかどうかを確認
-    if (collectedResults.length > 0) {
-      if (confirm("新しい分析を開始します。これまでの結果をクリアしますか？")) {
-        collectedResults = [];
-        chrome.storage.local.remove("analysisResults");
-        document.getElementById("csv-preview").textContent = "";
-      }
-    }
-
     // キーワードを保存
     window.originalKeywords = [...keywords];
 
@@ -182,6 +173,22 @@ document.addEventListener("DOMContentLoaded", async () => {
       csvPreview.style.display = "none";
       copyCsvBtn.style.display = "none";
       clearResultsBtn.style.display = "none";
+    }
+  });
+
+  // メッセージリスナーを追加
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === "searchKeyword") {
+      // 検索フォームの要素を取得
+      const searchInput = document.querySelector('textarea[name="q"]');
+      const searchForm = document.querySelector('form[role="search"]');
+
+      if (searchInput && searchForm) {
+        // 検索フォームに値を設定
+        searchInput.value = request.keyword;
+        // フォームをサブミット
+        searchForm.submit();
+      }
     }
   });
 });
@@ -291,4 +298,52 @@ function showError(message) {
     errorDiv.textContent = message;
     errorDiv.style.display = "block";
   }
+}
+
+// キーワードをクリックした時の処理
+function handleKeywordClick(keyword) {
+  chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+    const currentTab = tabs[0];
+
+    // Google検索ページでない場合は、Googleに移動してから検索
+    if (!currentTab.url?.includes("google.com/search")) {
+      chrome.tabs.update(
+        currentTab.id,
+        {
+          url: "https://www.google.com",
+        },
+        function (tab) {
+          // ページ読み込み完了後に検索を実行
+          chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
+            if (tabId === tab.id && info.status === "complete") {
+              chrome.tabs.onUpdated.removeListener(listener);
+              chrome.tabs.sendMessage(tab.id, {
+                action: "searchKeyword",
+                keyword: keyword,
+              });
+            }
+          });
+        }
+      );
+    } else {
+      // すでにGoogle検索ページにいる場合は直接検索
+      chrome.tabs.sendMessage(currentTab.id, {
+        action: "searchKeyword",
+        keyword: keyword,
+      });
+    }
+  });
+}
+
+// キーワードリストの表示処理でクリックイベントを設定
+function displayKeywords(keywords) {
+  const keywordList = document.getElementById("keywordList");
+  keywordList.innerHTML = "";
+
+  keywords.forEach((keyword) => {
+    const li = document.createElement("li");
+    li.textContent = keyword;
+    li.addEventListener("click", () => handleKeywordClick(keyword));
+    keywordList.appendChild(li);
+  });
 }
