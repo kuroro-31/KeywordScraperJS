@@ -82,6 +82,31 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
   });
+
+  // Slack Webhook URL設定の処理を追加
+  const slackUrlInput = document.getElementById("slackWebhookUrl");
+  const saveSlackUrlBtn = document.getElementById("saveSlackUrl");
+
+  // 保存されているWebhook URLを読み込む
+  chrome.storage.local.get("slackWebhookUrl", (result) => {
+    if (result.slackWebhookUrl) {
+      slackUrlInput.value = result.slackWebhookUrl;
+    }
+  });
+
+  // Webhook URLを保存
+  saveSlackUrlBtn.addEventListener("click", () => {
+    const webhookUrl = slackUrlInput.value.trim();
+    if (webhookUrl) {
+      chrome.storage.local.set({ slackWebhookUrl: webhookUrl }, () => {
+        // 保存成功時の視覚的フィードバック
+        saveSlackUrlBtn.textContent = "保存しました！";
+        setTimeout(() => {
+          saveSlackUrlBtn.textContent = "保存";
+        }, 2000);
+      });
+    }
+  });
 });
 
 function convertToCSV(results) {

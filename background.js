@@ -52,14 +52,18 @@ async function processKeywords(keywords) {
     console.error("処理エラー:", error);
 
     if (error.message === "RECAPTCHA_DETECTED") {
-      // リキャプチャエラーの場合は既に通知済みなので、追加の処理は不要
+      // リキャプチャエラーの場合は既に通知済み
     } else {
       // その他のエラーの場合
       await notifySlack(
         `処理中にエラーが発生しました: ${error.message}`,
         keywords[processedCount],
         processedCount,
-        totalKeywords
+        totalKeywords,
+        error.url ||
+          `https://www.google.com/search?q=${encodeURIComponent(
+            keywords[processedCount]
+          )}` // 現在のキーワードのURLを生成
       );
 
       chrome.notifications.create({
@@ -114,7 +118,8 @@ async function searchKeywords(keywordChunk, processedCount, totalKeywords) {
           "検索が一時停止されました。手動での対応が必要です。",
           keyword,
           localProcessedCount,
-          totalKeywords
+          totalKeywords,
+          error.url || "URL不明"
         );
 
         // 通知を表示
@@ -145,6 +150,15 @@ async function searchKeywords(keywordChunk, processedCount, totalKeywords) {
 }
 
 async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
+  // 最初にURLを定義
+  const normalUrl =
+    "https://www.google.com/search?q=" + encodeURIComponent(keyword);
+  const intitleUrl =
+    "https://www.google.com/search?q=intitle%3A" + encodeURIComponent(keyword);
+  const allintitleUrl =
+    "https://www.google.com/search?q=allintitle%3A" +
+    encodeURIComponent(keyword);
+
   try {
     const startTime = Date.now();
 
@@ -159,8 +173,6 @@ async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
     });
 
     // --- 1. 通常検索 ---
-    let normalUrl =
-      "https://www.google.com/search?q=" + encodeURIComponent(keyword);
     let normalResults = await getSearchResults(
       normalUrl,
       keyword,
@@ -172,9 +184,6 @@ async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
     await new Promise((resolve) => setTimeout(resolve, 5000)); // 5秒待機
 
     // --- 2. intitle検索 ---
-    let intitleUrl =
-      "https://www.google.com/search?q=intitle%3A" +
-      encodeURIComponent(keyword);
     let intitleResults = await getSearchResults(
       intitleUrl,
       keyword,
@@ -185,9 +194,6 @@ async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
     await new Promise((resolve) => setTimeout(resolve, 5000)); // 5秒待機
 
     // --- 3. allintitle検索 ---
-    let allintitleUrl =
-      "https://www.google.com/search?q=allintitle%3A" +
-      encodeURIComponent(keyword);
     let allintitleResults = await getSearchResults(
       allintitleUrl,
       keyword,
@@ -221,32 +227,27 @@ async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
         progressInfo: {
           current: processedCount + 1,
           total: totalKeywords,
-          processingTime: processingTime,
+          processingTime,
         },
       },
     });
 
-    // 結果を返す前の最終待機
-    await new Promise((resolve) => setTimeout(resolve, 3000)); // 3秒待機
-
-    // reCAPTCHA検出時の待機処理を追加
-    if (await checkForRecaptcha()) {
-      await new Promise((resolve) => setTimeout(resolve, 30000)); // 30秒待機
-      const stillHasRecaptcha = await checkForRecaptcha();
-      if (stillHasRecaptcha) {
-        throw new Error("RECAPTCHA_DETECTED");
-      }
-    }
-
     return keywordResult;
   } catch (error) {
-    if (error.message === "RECAPTCHA_DETECTED") {
-      await handleRecaptchaError(keyword, processedCount, totalKeywords);
-      throw error;
-    }
-    // その他のエラーの場合は通常のエラーハンドリング
     console.error("検索エラー:", error);
-    throw error; // エラーを再スロー
+
+    // エラーオブジェクトにURLを追加
+    error.url = normalUrl; // 現在の検索URL
+
+    if (error.message === "RECAPTCHA_DETECTED") {
+      await handleRecaptchaError(
+        keyword,
+        processedCount,
+        totalKeywords,
+        normalUrl // 現在の検索URL
+      );
+    }
+    throw error;
   }
 }
 
@@ -255,39 +256,39 @@ async function notifySlack(
   message,
   keyword = "",
   processedCount = 0,
-  totalKeywords = 0
+  totalKeywords = 0,
+  errorUrl = ""
 ) {
   console.log("Slack通知開始:", {
     message,
     keyword,
     processedCount,
     totalKeywords,
+    errorUrl,
   });
 
-  // Webhookの環境変数化または設定ファイルからの読み込みを推奨
-  const SLACK_WEBHOOK_URL = await chrome.storage.local
-    .get("slackWebhookUrl")
-    .then((result) => result.slackWebhookUrl);
-
-  if (!SLACK_WEBHOOK_URL) {
-    console.warn("Slack Webhook URLが設定されていません");
-    return;
-  }
-
   try {
+    const result = await chrome.storage.local.get("slackWebhookUrl");
+    const SLACK_WEBHOOK_URL = result.slackWebhookUrl;
+
+    if (!SLACK_WEBHOOK_URL) {
+      console.error("Slack Webhook URLが設定されていません");
+      return;
+    }
+
     const response = await fetch(SLACK_WEBHOOK_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        text: "🚨 リキャプチャ検出アラート",
+        text: "🚨 キーワード分析アラート",
         blocks: [
           {
             type: "section",
             text: {
               type: "mrkdwn",
-              text: `*リキャプチャが検出されました*\n${message}`,
+              text: `*${message}*`,
             },
           },
           {
@@ -295,7 +296,7 @@ async function notifySlack(
             fields: [
               {
                 type: "mrkdwn",
-                text: `*最後のキーワード:*\n${keyword || "不明"}`,
+                text: `*キーワード:*\n${keyword || "不明"}`,
               },
               {
                 type: "mrkdwn",
@@ -303,7 +304,11 @@ async function notifySlack(
               },
               {
                 type: "mrkdwn",
-                text: `*検出時刻:*\n${new Date().toLocaleString("ja-JP")}`,
+                text: `*発生時刻:*\n${new Date().toLocaleString("ja-JP")}`,
+              },
+              {
+                type: "mrkdwn",
+                text: `*URL:*\n${errorUrl || "不明"}`,
               },
             ],
           },
@@ -315,11 +320,9 @@ async function notifySlack(
       throw new Error(`Slack通知エラー: ${response.status}`);
     }
 
-    const responseText = await response.text();
-    console.log("Slack通知成功:", responseText);
+    console.log("Slack通知成功:", await response.text());
   } catch (error) {
     console.error("Slack通知エラー:", error);
-    // エラーを上位に伝播させない
   }
 }
 
@@ -419,12 +422,13 @@ chrome.webRequest?.onCompleted?.addListener(
             type: "RECAPTCHA_INTERRUPT",
           });
 
-          // Slackに通知
+          // Slackに通知（URLを追加）
           notifySlack(
             "Googleの検索でreCAPTCHAが表示されています。手動での対応が必要です。",
             keywordQueue[currentIndex],
             currentIndex,
-            keywordQueue.length
+            keywordQueue.length,
+            tab.url // URLを追加
           );
         }
       });
@@ -450,7 +454,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       "リキャプチャが検出されました。手動での対応が必要です。",
       message.keyword || "不明",
       message.currentCount || 0,
-      message.totalCount || 0
+      message.totalCount || 0,
+      message.errorUrl || ""
     );
 
     // ポップアップに通知
@@ -460,6 +465,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         lastKeyword: message.keyword,
         currentCount: message.currentCount,
         totalCount: message.totalCount,
+        errorUrl: message.errorUrl,
       },
     });
   }
@@ -467,13 +473,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // reCAPTCHAエラーハンドリング関数
-async function handleRecaptchaError(keyword, processedCount, totalKeywords) {
+async function handleRecaptchaError(
+  keyword,
+  processedCount,
+  totalKeywords,
+  url
+) {
   try {
     await notifySlack(
       "検索が一時停止されました。手動での対応が必要です。",
       keyword,
       processedCount,
-      totalKeywords
+      totalKeywords,
+      url
     );
 
     chrome.notifications.create({
