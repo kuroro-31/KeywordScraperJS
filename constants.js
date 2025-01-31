@@ -8,16 +8,16 @@ const QA_SITES = [
 ];
 
 const BLOG_SITES = [
-  "blog.hatena.ne.jp",
-  "ameblo.jp",
-  "plaza.rakuten.co.jp",
-  "note.com",
-  "fanblogs.jp",
-  "cocolog-nifty.com",
-  "tumblr.com",
-  "fc2.com",
-  "blog.goo.ne.jp",
-  "https://plaza.rakuten.co.jp",
+  "hatenablog.com", // ハテナブログ
+  "blog.hatena.ne.jp", // ハテナブログ
+  "ameblo.jp", // アメブロ
+  "plaza.rakuten.co.jp", // 楽天ブログ
+  "note.com", // ノート
+  "fc2.com", // FC2ブログ
+  "blog.livedoor.com", // ライブドアブログ
+  "blog.goo.ne.jp", //gooブログ
+  "mimilani.exblog.jp", // エキサイトブログ
+  "exblog.jp", // エキサイトブログ
 ];
 
 const SNS_SITES = {
@@ -27,4 +27,4 @@ const SNS_SITES = {
   Facebook: ["facebook.com"],
   Youtube: ["youtube.com"],
   Twitch: ["twitch.tv"],
-}; 
+};

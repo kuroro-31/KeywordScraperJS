@@ -66,16 +66,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       // 結果とキーワードの状態を保存
       chrome.storage.local.set({
         analysisResults: collectedResults,
-        savedKeywords: keywordInput.value,
+        savedKeywords: keywordInput.value, // キーワードはそのまま保持
       });
-
-      // 処理済みのキーワードをtextareaから削除（実際に処理されたキーワードを削除）
-      const lines = keywordInput.value.split("\n");
-      const updatedLines = lines.filter((line) => {
-        const trimmedLine = line.trim();
-        return trimmedLine !== keywordResult.Keyword && trimmedLine.length > 0;
-      });
-      keywordInput.value = updatedLines.join("\n");
 
       // CSV形式で結果を表示
       updateCsvPreview(collectedResults);
@@ -95,26 +87,48 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // 「分析開始」ボタン押下でキーワードを background.js に送信
+  // 「分析開始」ボタンの処理を修正
   startBtn.addEventListener("click", async () => {
     const rawText = keywordInput.value.trim();
     if (!rawText) {
       statusEl.textContent = "キーワードが入力されていません。";
       return;
     }
-    // 1行ずつ分割し、空行などは除去
+
+    // 入力されたキーワードを配列に変換
     let keywords = rawText
       .split("\n")
       .map((k) => k.trim())
       .filter((k) => k.length > 1);
 
-    // キーワードを保存
-    window.originalKeywords = [...keywords];
+    // 保存された分析結果を取得
+    const stored = await chrome.storage.local.get("analysisResults");
+    const processedKeywords = new Set(
+      (stored.analysisResults || []).map((result) => result.Keyword)
+    );
+
+    // すでに分析済みのキーワードを除外
+    const newKeywords = keywords.filter(
+      (keyword) => !processedKeywords.has(keyword)
+    );
+
+    // 除外されたキーワードがある場合は入力欄を更新
+    if (newKeywords.length !== keywords.length) {
+      keywordInput.value = newKeywords.join("\n");
+      // 更新されたキーワードを保存
+      chrome.storage.local.set({ savedKeywords: keywordInput.value });
+    }
+
+    // 分析対象のキーワードがない場合
+    if (newKeywords.length === 0) {
+      statusEl.textContent = "すべてのキーワードはすでに分析済みです。";
+      return;
+    }
 
     // 最初のキーワードから順番に処理するため、配列を逆順にはしない
     chrome.runtime.sendMessage({
       type: "START_ANALYSIS",
-      payload: { keywords: keywords },
+      payload: { keywords: newKeywords },
     });
   });
 
@@ -192,12 +206,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // キーボードショートカットのイベントリスナーを追加
+  // Command+Enterのショートカットキーを追加
   document.addEventListener("keydown", (e) => {
-    // MacのCommand + Enter または WindowsのCtrl + Enter
+    // MacではCommand、WindowsではCtrlキーを使用
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault(); // デフォルトの動作を防止
-      startBtn.click(); // 分析開始ボタンをクリック
+      startBtn.click(); // 分析開始ボタンのクリックをシミュレート
     }
   });
 });
@@ -355,4 +369,12 @@ function displayKeywords(keywords) {
     li.addEventListener("click", () => handleKeywordClick(keyword));
     keywordList.appendChild(li);
   });
+}
+
+// キーワード分析が完了した後の処理
+function handleAnalysisComplete() {
+  // 全てのキーワードの分析が完了したら入力欄をクリア
+  if (remainingKeywords.length === 0) {
+    document.getElementById("keywords").value = "";
+  }
 }

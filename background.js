@@ -135,13 +135,32 @@ async function searchKeywords(keywordChunk, processedCount, totalKeywords) {
       results.push(result);
       await chrome.storage.local.set({ analysisResults: results });
 
-      console.log("キーワード検索完了:", keyword, result);
+      // 結果をpopupに通知
+      chrome.runtime.sendMessage({
+        type: "ANALYSIS_RESULT",
+        payload: {
+          keywordResult: result,
+          progressInfo: {
+            current: localProcessedCount + 1,
+            total: totalKeywords,
+            processingTime: result.処理時間,
+          },
+        },
+      });
+
+      // キーワードが処理されたことを通知
+      chrome.runtime.sendMessage({
+        type: "KEYWORD_REMOVED",
+        payload: {
+          processedKeyword: keyword,
+        },
+      });
 
       // カウンターをインクリメント
       localProcessedCount++;
 
-      // 次のキーワードの前に待機時間を延長
-      await new Promise((resolve) => setTimeout(resolve, 2000)); // 2秒待機に変更
+      // 次のキーワードの前に待機時間を設定
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     } catch (error) {
       console.error("検索エラー:", error);
 
