@@ -1,1 +1,2 @@
 # KeywordScraperJS
+# YahooKeywordAnalyzer
