@@ -11,6 +11,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const csvPreview = document.getElementById("csv-preview");
   const copyCsvBtn = document.getElementById("copy-csv-btn");
   const clearResultsBtn = document.getElementById("clear-results-btn");
+  const analysisStatus = document.getElementById("analysis-status");
 
   // 初期状態で非表示にする
   csvPreview.style.display = "none";
@@ -87,13 +88,26 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // 初期表示時に分析状態を確認
-  const { isAnalyzing } = await chrome.storage.local.get("isAnalyzing");
-  const analysisStatus = document.getElementById("analysis-status");
-  if (isAnalyzing) {
+  // 分析状態を復元
+  const { isAnalyzing, analysisState, progressStatus, analysisError } =
+    await chrome.storage.local.get([
+      "isAnalyzing",
+      "analysisState",
+      "progressStatus",
+      "analysisError",
+    ]);
+
+  // 分析中の場合、状態を表示
+  if (isAnalyzing && analysisStatus) {
     analysisStatus.classList.add("active");
-  } else {
+    if (progressStatus) {
+      statusEl.textContent = `${progressStatus.currentKeyword}\n${progressStatus.progressText}`;
+    }
+  } else if (analysisStatus) {
     analysisStatus.classList.remove("active");
+    if (analysisError) {
+      statusEl.textContent = `⚠️ エラーが発生しました。\n${analysisError.message}\n処理済み: ${analysisError.currentCount}/${analysisError.totalCount}キーワード\n最後のキーワード: ${analysisError.lastKeyword}`;
+    }
   }
 
   // 「分析開始」ボタンの処理を修正
@@ -135,7 +149,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     // 分析開始時にステータス表示
-    analysisStatus.classList.add("active");
+    if (analysisStatus) {
+      analysisStatus.classList.add("active");
+    }
 
     // 分析開始メッセージ送信
     chrome.runtime.sendMessage({
@@ -188,19 +204,30 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // 結果をクリアするボタンを追加
-  document.getElementById("clear-results-btn").addEventListener("click", () => {
-    if (confirm("保存された結果をすべてクリアしますか？")) {
-      collectedResults = [];
-      chrome.storage.local.remove("analysisResults");
-      document.getElementById("csv-preview").textContent = "";
+  // 結果をクリアするボタンの処理を修正
+  document
+    .getElementById("clear-results-btn")
+    .addEventListener("click", async () => {
+      if (confirm("保存された結果をすべてクリアしますか？")) {
+        // 結果配列をクリア
+        collectedResults = [];
 
-      // 結果表示要素を非表示
-      csvPreview.style.display = "none";
-      copyCsvBtn.style.display = "none";
-      clearResultsBtn.style.display = "none";
-    }
-  });
+        // ストレージから結果を削除
+        await chrome.storage.local.remove("analysisResults");
+
+        // 表示要素をクリア
+        document.getElementById("csv-preview").textContent = "";
+        document.getElementById("results-container").textContent = "";
+
+        // 表示要素を非表示
+        document.getElementById("csv-preview").style.display = "none";
+        document.getElementById("copy-csv-btn").style.display = "none";
+        document.getElementById("clear-results-btn").style.display = "none";
+
+        // ステータス表示をクリア
+        document.getElementById("status").textContent = "";
+      }
+    });
 
   // メッセージリスナーを追加
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -229,6 +256,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // メッセージリスナーで分析完了時に非表示
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (!analysisStatus) return;
+
     if (message.type === "ANALYSIS_FINISHED") {
       analysisStatus.classList.remove("active");
     } else if (message.type === "ANALYSIS_ERROR") {

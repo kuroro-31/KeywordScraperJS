@@ -31,13 +31,23 @@ async function processKeywords(keywords) {
 
   try {
     for (let i = 0; i < chunks.length; i++) {
+      // 分析状態を保存
+      await chrome.storage.local.set({
+        analysisState: {
+          currentIndex: i,
+          processedCount,
+          totalKeywords,
+          remainingKeywords: chunks.slice(i),
+        },
+      });
+
       if (i > 0) {
         // バッチ間の待機時間を30-40秒に短縮
         const waitTime = Math.floor(Math.random() * 10) + 30;
         for (let remaining = waitTime; remaining > 0; remaining--) {
-          chrome.runtime.sendMessage({
-            type: "ANALYSIS_UPDATE",
-            payload: {
+          // 進捗状況を保存
+          await chrome.storage.local.set({
+            progressStatus: {
               currentKeyword: "インターバル待機中",
               progressText: `次のバッチまで残り${remaining}秒 (${processedCount}/${totalKeywords}キーワード完了)`,
             },
@@ -45,6 +55,7 @@ async function processKeywords(keywords) {
           await new Promise((resolve) => setTimeout(resolve, 1000));
         }
       }
+
       try {
         processedCount = await searchKeywords(
           chunks[i],
@@ -53,9 +64,17 @@ async function processKeywords(keywords) {
         );
       } catch (error) {
         console.error("検索処理エラー:", error);
-        await chrome.storage.local.set({ isAnalyzing: false });
+        await chrome.storage.local.set({
+          isAnalyzing: false,
+          analysisError: {
+            message: error.message,
+            lastKeyword: chunks[i][0],
+            currentCount: processedCount,
+            totalCount: totalKeywords,
+          },
+        });
 
-        // エラー通知を送信
+        // エラー通知を送信（ブロードキャスト）
         chrome.runtime.sendMessage({
           type: "ANALYSIS_ERROR",
           payload: {
@@ -78,28 +97,23 @@ async function processKeywords(keywords) {
             )}`
         );
 
-        // エラー通知を表示
-        chrome.notifications.create({
-          type: "basic",
-          iconUrl: "icon48.png",
-          title: "エラーが発生しました",
-          message: `処理中にエラーが発生しました: ${error.message}`,
-        });
-
-        // 処理を中断
         return;
       }
     }
 
-    // 全ての処理が完了したらフラグを解除
-    await chrome.storage.local.set({ isAnalyzing: false });
+    // 全ての処理が完了
+    await chrome.storage.local.set({
+      isAnalyzing: false,
+      analysisState: null,
+      progressStatus: null,
+    });
 
-    // 全ての処理が完了したら完了メッセージを送信
+    // 完了通知をブロードキャスト
     chrome.runtime.sendMessage({
       type: "ANALYSIS_FINISHED",
     });
 
-    // Slack通知を追加
+    // Slack通知
     await notifySlack(
       "全てのキーワード分析が完了しました",
       "",
@@ -108,24 +122,13 @@ async function processKeywords(keywords) {
       ""
     );
 
-    // 完了通知を表示
-    chrome.notifications.create({
-      type: "basic",
-      iconUrl: "icon48.png",
-      title: "キーワード分析が完了しました",
-      message: `${totalKeywords}件のキーワードの分析が完了しました。`,
-    });
-
-    // 全ての処理が完了したらクリーンアップ
     await cleanupAnalysisWindow();
   } catch (error) {
     console.error("処理エラー:", error);
-    // 上位のエラーハンドリングも追加
-    await chrome.storage.local.set({ isAnalyzing: false });
-    chrome.runtime.sendMessage({
-      type: "ANALYSIS_ERROR",
-      payload: {
-        error: error.message,
+    await chrome.storage.local.set({
+      isAnalyzing: false,
+      analysisError: {
+        message: error.message,
         currentCount: processedCount,
         totalCount: totalKeywords,
       },
