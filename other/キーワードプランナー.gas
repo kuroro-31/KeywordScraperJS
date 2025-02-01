@@ -78,12 +78,17 @@ function deleteRowsWithMinusInC() {
 // B列が500以外の行を削除する関数
 function deleteRowsNot500InB() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var range = sheet.getRange("B:B");
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 1) return;
+  var range = sheet.getRange(1, 2, lastRow, 1); // B列の範囲を取得
   var values = range.getValues();
-  // 下から上に向かって削除しないと行番号がずれる
-  for (var i = values.length - 1; i >= 0; i--) {
-    var cellValue = parseFloat(values[i][0]);
-    if (isNaN(cellValue) || cellValue !== 500) {
+  
+  for (var i = lastRow - 1; i >= 0; i--) {
+    var cellValue = values[i][0];
+    var numericValue = parseFloat(cellValue);
+    Logger.log("Row " + (i + 1) + " B: " + numericValue);
+    
+    if (isNaN(numericValue) || numericValue !== 500) {
       sheet.deleteRow(i + 1);
     }
   }

@@ -6,6 +6,9 @@ let currentIndex = 0;
 
 // キーワードを順番に処理するフロー
 async function processKeywords(keywords) {
+  // 分析開始時にフラグをセット
+  await chrome.storage.local.set({ isAnalyzing: true });
+
   // 保存された結果を取得して、処理済みのキーワードを特定
   const stored = await chrome.storage.local.get("analysisResults");
   const processedKeywords = new Set(
@@ -17,9 +20,10 @@ async function processKeywords(keywords) {
     (keyword) => !processedKeywords.has(keyword)
   );
 
+  // バッチサイズを1に変更
   const chunks = [];
-  for (let i = 0; i < remainingKeywords.length; i += 5) {
-    chunks.push(remainingKeywords.slice(i, i + 5));
+  for (let i = 0; i < remainingKeywords.length; i += 1) {
+    chunks.push(remainingKeywords.slice(i, i + 1));
   }
 
   const totalKeywords = keywords.length;
@@ -28,13 +32,14 @@ async function processKeywords(keywords) {
   try {
     for (let i = 0; i < chunks.length; i++) {
       if (i > 0) {
-        // インターバル待機中のメッセージを表示
-        for (let waitTime = 1; waitTime > 0; waitTime--) {
+        // バッチ間の待機時間を30-40秒に短縮
+        const waitTime = Math.floor(Math.random() * 10) + 30;
+        for (let remaining = waitTime; remaining > 0; remaining--) {
           chrome.runtime.sendMessage({
             type: "ANALYSIS_UPDATE",
             payload: {
               currentKeyword: "インターバル待機中",
-              progressText: `次のバッチまで残り${waitTime}秒 (${processedCount}/${totalKeywords}キーワード完了)`,
+              progressText: `次のバッチまで残り${remaining}秒 (${processedCount}/${totalKeywords}キーワード完了)`,
             },
           });
           await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -47,8 +52,8 @@ async function processKeywords(keywords) {
           totalKeywords
         );
       } catch (error) {
-        // エラーが発生した場合は処理を中断
         console.error("検索処理エラー:", error);
+        await chrome.storage.local.set({ isAnalyzing: false });
 
         // エラー通知を送信
         chrome.runtime.sendMessage({
@@ -86,6 +91,9 @@ async function processKeywords(keywords) {
       }
     }
 
+    // 全ての処理が完了したらフラグを解除
+    await chrome.storage.local.set({ isAnalyzing: false });
+
     // 全ての処理が完了したら完了メッセージを送信
     chrome.runtime.sendMessage({
       type: "ANALYSIS_FINISHED",
@@ -98,9 +106,13 @@ async function processKeywords(keywords) {
       title: "キーワード分析が完了しました",
       message: `${totalKeywords}件のキーワードの分析が完了しました。`,
     });
+
+    // 全ての処理が完了したらクリーンアップ
+    await cleanupAnalysisWindow();
   } catch (error) {
     console.error("処理エラー:", error);
     // 上位のエラーハンドリングも追加
+    await chrome.storage.local.set({ isAnalyzing: false });
     chrome.runtime.sendMessage({
       type: "ANALYSIS_ERROR",
       payload: {
@@ -117,9 +129,15 @@ async function processKeywords(keywords) {
 async function searchKeywords(keywordChunk, processedCount, totalKeywords) {
   console.log("検索開始:", keywordChunk);
   let localProcessedCount = processedCount;
+  let retryCount = 0;
+  const MAX_RETRIES = 3;
 
   for (const keyword of keywordChunk) {
     try {
+      // キーワード処理前の待機時間を20-30秒に短縮
+      const preSearchDelay = Math.floor(Math.random() * 10000) + 20000;
+      await new Promise((resolve) => setTimeout(resolve, preSearchDelay));
+
       console.log("現在の検索キーワード:", keyword);
 
       // searchSingleKeywordの結果を待つ
@@ -159,34 +177,30 @@ async function searchKeywords(keywordChunk, processedCount, totalKeywords) {
       // カウンターをインクリメント
       localProcessedCount++;
 
-      // 次のキーワードの前に待機時間を設定
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // 検索成功後の待機時間を15-20秒に短縮
+      const postSearchDelay = Math.floor(Math.random() * 5000) + 15000;
+      await new Promise((resolve) => setTimeout(resolve, postSearchDelay));
     } catch (error) {
       console.error("検索エラー:", error);
 
       if (error.message === "RECAPTCHA_DETECTED") {
-        // リキャプチャ検出時の処理を改善
-        await handleRecaptchaError(
-          keyword,
-          localProcessedCount,
-          totalKeywords,
-          error.url || "URL不明"
-        );
+        retryCount++;
 
-        // 現在までの結果を保存
-        chrome.runtime.sendMessage({
-          type: "SAVE_PARTIAL_RESULTS",
-          payload: {
-            lastKeyword: keyword,
-            processedCount: localProcessedCount,
-          },
-        });
+        if (retryCount <= MAX_RETRIES) {
+          // リキャプチャ検出時の待機時間を2-3分に短縮
+          const backoffDelay = Math.floor(Math.random() * 60000) + 120000;
+          console.log(
+            `リキャプチャ検出 - ${
+              backoffDelay / 1000
+            }秒待機後にリトライ (${retryCount}/${MAX_RETRIES})`
+          );
 
-        // エラーを投げる前に一時停止
-        await new Promise((resolve) => setTimeout(resolve, 5000));
-        throw error;
+          await new Promise((resolve) => setTimeout(resolve, backoffDelay));
+          // 同じキーワードを再試行するためにインデックスを戻す
+          i--;
+          continue;
+        }
       }
-      // その他のエラーの場合も上位に伝播
       throw error;
     }
   }
@@ -209,14 +223,11 @@ async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
       keyword
     )}`;
 
-    // 現在のタブを取得
-    const [tab] = await chrome.tabs.query({
-      active: true,
-      currentWindow: true,
-    });
+    // 専用の分析ウィンドウを作成（存在しない場合）
+    let analysisWindow = await getOrCreateAnalysisWindow();
 
     // --- 1. 通常の検索 ---
-    await chrome.tabs.update(tab.id, { url: normalUrl });
+    let tab = await createOrUpdateTab(analysisWindow.id, normalUrl);
     let normalResults = await waitForSearchResults(tab.id);
 
     // 各検索の間に十分な待機時間を設定
@@ -596,3 +607,60 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   // ... 他のメッセージハンドリング ...
 });
+
+// 分析用ウィンドウを取得または作成する関数
+async function getOrCreateAnalysisWindow() {
+  // 既存の分析ウィンドウを探す
+  const windows = await chrome.windows.getAll();
+  const existingWindow = windows.find(
+    (w) => w.type === "popup" && w.id === analysisWindowId
+  );
+
+  if (existingWindow) {
+    return existingWindow;
+  }
+
+  // 新しいウィンドウを作成
+  const window = await chrome.windows.create({
+    url: "about:blank",
+    type: "popup",
+    width: 800,
+    height: 600,
+    left: 100,
+    top: 100,
+    focused: false, // メインウィンドウのフォーカスを維持
+  });
+
+  // ウィンドウIDを保存
+  analysisWindowId = window.id;
+  return window;
+}
+
+// タブを作成または更新する関数
+async function createOrUpdateTab(windowId, url) {
+  // ウィンドウ内のタブを取得
+  const tabs = await chrome.tabs.query({ windowId });
+
+  if (tabs.length > 0) {
+    // 既存のタブを更新
+    return await chrome.tabs.update(tabs[0].id, { url });
+  } else {
+    // 新しいタブを作成
+    return await chrome.tabs.create({ windowId, url });
+  }
+}
+
+// グローバル変数として分析ウィンドウのIDを保持
+let analysisWindowId = null;
+
+// 分析終了時にウィンドウを閉じる処理を追加
+async function cleanupAnalysisWindow() {
+  if (analysisWindowId) {
+    try {
+      await chrome.windows.remove(analysisWindowId);
+    } catch (error) {
+      console.error("ウィンドウ終了エラー:", error);
+    }
+    analysisWindowId = null;
+  }
+}

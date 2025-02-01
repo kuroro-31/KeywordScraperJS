@@ -87,6 +87,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
+  // 初期表示時に分析状態を確認
+  const { isAnalyzing } = await chrome.storage.local.get("isAnalyzing");
+  const analysisStatus = document.getElementById("analysis-status");
+  if (isAnalyzing) {
+    analysisStatus.classList.add("active");
+  } else {
+    analysisStatus.classList.remove("active");
+  }
+
   // 「分析開始」ボタンの処理を修正
   startBtn.addEventListener("click", async () => {
     const rawText = keywordInput.value.trim();
@@ -125,7 +134,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
-    // 最初のキーワードから順番に処理するため、配列を逆順にはしない
+    // 分析開始時にステータス表示
+    analysisStatus.classList.add("active");
+
+    // 分析開始メッセージ送信
     chrome.runtime.sendMessage({
       type: "START_ANALYSIS",
       payload: { keywords: newKeywords },
@@ -212,6 +224,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault(); // デフォルトの動作を防止
       startBtn.click(); // 分析開始ボタンのクリックをシミュレート
+    }
+  });
+
+  // メッセージリスナーで分析完了時に非表示
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === "ANALYSIS_FINISHED") {
+      analysisStatus.classList.remove("active");
+    } else if (message.type === "ANALYSIS_ERROR") {
+      analysisStatus.classList.remove("active");
+    } else if (message.type === "RECAPTCHA_INTERRUPT") {
+      analysisStatus.classList.remove("active");
     }
   });
 });

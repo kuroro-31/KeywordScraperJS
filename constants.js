@@ -18,6 +18,7 @@ const BLOG_SITES = [
   "blog.goo.ne.jp", //gooブログ
   "mimilani.exblog.jp", // エキサイトブログ
   "exblog.jp", // エキサイトブログ
+  "fc2.com", // FC2ブログ
 ];
 
 const SNS_SITES = {

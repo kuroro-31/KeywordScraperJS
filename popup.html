@@ -143,10 +143,42 @@
       color: #cccccc;
       margin: 8px 0;
     }
+
+    .header-container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    #analysis-status {
+      position: static;
+      background-color: #0078d4;
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.85em;
+      display: none;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    #analysis-status.active {
+      display: inline-block;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.7; }
+      100% { opacity: 1; }
+    }
   </style>
 </head>
 <body>
-  <h3>キーワード分析ツール</h3>
+  <div class="header-container">
+    <h3>キーワード分析ツール</h3>
+    <div id="analysis-status">分析中...</div>
+  </div>
   <p>1行に1キーワードを入力</p>
   <textarea id="keywordInput"></textarea>
   <div class="button-group">
