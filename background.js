@@ -573,16 +573,6 @@ async function handleRecaptchaError(
   }
 }
 
-// 既存のコードの最後に追加
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (
-    changeInfo.status === "complete" &&
-    tab.url?.startsWith("https://www.google.com/search?")
-  ) {
-    chrome.action.openPopup();
-  }
-});
-
 // キーワード検索を実行する関数を修正
 function searchKeyword(keyword) {
   // 現在のタブを取得
