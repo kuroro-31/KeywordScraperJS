@@ -99,6 +99,15 @@ async function processKeywords(keywords) {
       type: "ANALYSIS_FINISHED",
     });
 
+    // Slack通知を追加
+    await notifySlack(
+      "全てのキーワード分析が完了しました",
+      "",
+      totalKeywords,
+      totalKeywords,
+      ""
+    );
+
     // 完了通知を表示
     chrome.notifications.create({
       type: "basic",
