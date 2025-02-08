@@ -4,10 +4,55 @@
 let keywordQueue = [];
 let currentIndex = 0;
 
+// ランダムなユーザーエージェントのリストを拡充
+const USER_AGENTS = [
+  // Windows
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.6045.159 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36 Edg/118.0.2088.76",
+
+  // Mac
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.6045.159 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.2 Safari/605.1.15",
+
+  // iOS
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/120.0.6099.119 Mobile/15E148 Safari/604.1",
+
+  // Android
+  "Mozilla/5.0 (Linux; Android 13; SM-S901B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.43 Mobile Safari/537.36",
+  "Mozilla/5.0 (Linux; Android 13; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.43 Mobile Safari/537.36",
+  "Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.43 Mobile Safari/537.36",
+  "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.43 Mobile Safari/537.36",
+
+  // Linux
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/119.0",
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.6045.159 Safari/537.36",
+
+  // その他
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 OPR/106.0.0.0",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 OPR/106.0.0.0",
+];
+
+// ランダムなユーザーエージェントを取得
+function getRandomUserAgent() {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
+
 // キーワードを順番に処理するフロー
 async function processKeywords(keywords) {
-  // 分析開始時にフラグをセット
   await chrome.storage.local.set({ isAnalyzing: true });
+
+  // 重複を除去するためにSetを使用
+  const uniqueKeywords = [...new Set(keywords)];
 
   // 保存された結果を取得して、処理済みのキーワードを特定
   const stored = await chrome.storage.local.get("analysisResults");
@@ -16,7 +61,7 @@ async function processKeywords(keywords) {
   );
 
   // 未処理のキーワードのみをフィルタリング
-  const remainingKeywords = keywords.filter(
+  const remainingKeywords = uniqueKeywords.filter(
     (keyword) => !processedKeywords.has(keyword)
   );
 
@@ -42,14 +87,16 @@ async function processKeywords(keywords) {
       });
 
       if (i > 0) {
-        // バッチ間の待機時間を30-40秒に短縮
-        const waitTime = Math.floor(Math.random() * 10) + 30;
-        for (let remaining = waitTime; remaining > 0; remaining--) {
+        // バッチ間の待機時間を5-10秒に短縮
+        const waitTime = Math.floor(Math.random() * 5000) + 5000;
+        for (let remaining = waitTime; remaining > 0; remaining -= 1000) {
           // 進捗状況を保存
           await chrome.storage.local.set({
             progressStatus: {
               currentKeyword: "インターバル待機中",
-              progressText: `次のバッチまで残り${remaining}秒 (${processedCount}/${totalKeywords}キーワード完了)`,
+              progressText: `次のバッチまで残り${Math.round(
+                remaining / 1000
+              )}秒 (${processedCount}/${totalKeywords}キーワード完了)`,
             },
           });
           await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -146,8 +193,8 @@ async function searchKeywords(keywordChunk, processedCount, totalKeywords) {
 
   for (const keyword of keywordChunk) {
     try {
-      // キーワード処理前の待機時間を20-30秒に短縮
-      const preSearchDelay = Math.floor(Math.random() * 10000) + 20000;
+      // キーワード処理前の待機時間を5-10秒に短縮
+      const preSearchDelay = Math.floor(Math.random() * 5000) + 5000;
       await new Promise((resolve) => setTimeout(resolve, preSearchDelay));
 
       console.log("現在の検索キーワード:", keyword);
@@ -189,8 +236,8 @@ async function searchKeywords(keywordChunk, processedCount, totalKeywords) {
       // カウンターをインクリメント
       localProcessedCount++;
 
-      // 検索成功後の待機時間を15-20秒に短縮
-      const postSearchDelay = Math.floor(Math.random() * 5000) + 15000;
+      // 検索成功後の待機時間を5-10秒に短縮
+      const postSearchDelay = Math.floor(Math.random() * 5000) + 5000;
       await new Promise((resolve) => setTimeout(resolve, postSearchDelay));
     } catch (error) {
       console.error("検索エラー:", error);
@@ -199,8 +246,8 @@ async function searchKeywords(keywordChunk, processedCount, totalKeywords) {
         retryCount++;
 
         if (retryCount <= MAX_RETRIES) {
-          // リキャプチャ検出時の待機時間を2-3分に短縮
-          const backoffDelay = Math.floor(Math.random() * 60000) + 120000;
+          // リキャプチャ検出時の待機時間を1-2分に短縮
+          const backoffDelay = Math.floor(Math.random() * 60000) + 60000;
           console.log(
             `リキャプチャ検出 - ${
               backoffDelay / 1000
@@ -209,7 +256,6 @@ async function searchKeywords(keywordChunk, processedCount, totalKeywords) {
 
           await new Promise((resolve) => setTimeout(resolve, backoffDelay));
           // 同じキーワードを再試行するためにインデックスを戻す
-          i--;
           continue;
         }
       }
@@ -219,12 +265,80 @@ async function searchKeywords(keywordChunk, processedCount, totalKeywords) {
   return localProcessedCount;
 }
 
+// リキャプチャ検出時の待機時間をランダム化
+const MIN_RETRY_DELAY = 120000; // 2分
+const MAX_RETRY_DELAY = 300000; // 5分
+
+async function handleRecaptchaError(
+  keyword,
+  processedCount,
+  totalKeywords,
+  url
+) {
+  try {
+    // 待機時間をランダム化
+    const waitTime =
+      Math.floor(Math.random() * (MAX_RETRY_DELAY - MIN_RETRY_DELAY)) +
+      MIN_RETRY_DELAY;
+    console.log(`リキャプチャ検出 - ${waitTime / 1000}秒待機後にリトライ`);
+
+    // 待機中に進捗を更新
+    for (let remaining = waitTime; remaining > 0; remaining -= 1000) {
+      await chrome.storage.local.set({
+        progressStatus: {
+          currentKeyword: "リキャプチャ待機中",
+          progressText: `再試行まで残り${Math.round(
+            remaining / 1000
+          )}秒 (${processedCount}/${totalKeywords}キーワード完了)`,
+        },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+
+    // Slack通知
+    await notifySlack(
+      "リキャプチャ検出により一時停止中。自動的に再試行します。",
+      keyword,
+      processedCount,
+      totalKeywords,
+      url
+    );
+  } catch (error) {
+    console.error("リキャプチャエラーハンドリング中のエラー:", error);
+  }
+}
+
 // searchSingleKeyword関数を修正
 async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
   try {
     const startTime = Date.now();
 
-    // 検索URLを構築
+    // ランダムなユーザーエージェントを設定
+    const userAgent = getRandomUserAgent();
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: [1], // 既存のルールを削除
+      addRules: [
+        {
+          id: 1,
+          priority: 1,
+          action: {
+            type: "modifyHeaders",
+            requestHeaders: [
+              {
+                header: "User-Agent",
+                operation: "set",
+                value: userAgent,
+              },
+            ],
+          },
+          condition: {
+            urlFilter: "*://*.google.com/*",
+            resourceTypes: ["main_frame"],
+          },
+        },
+      ],
+    });
+
     const normalUrl = `https://www.google.com/search?q=${encodeURIComponent(
       keyword
     )}`;
@@ -272,6 +386,15 @@ async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
       処理時間: `${processingTime}秒`,
     };
   } catch (error) {
+    if (error.message === "RECAPTCHA_DETECTED") {
+      await handleRecaptchaError(
+        keyword,
+        processedCount,
+        totalKeywords,
+        normalUrl
+      );
+      throw error;
+    }
     console.error("検索エラー:", error);
     throw error;
   }
@@ -521,93 +644,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
   }
   // 他のメッセージ処理...
-});
-
-// handleRecaptchaError関数を改善
-async function handleRecaptchaError(
-  keyword,
-  processedCount,
-  totalKeywords,
-  url
-) {
-  try {
-    // Slack通知
-    await notifySlack(
-      "検索が一時停止されました。reCAPTCHAによる確認が必要です。",
-      keyword,
-      processedCount,
-      totalKeywords,
-      url
-    );
-
-    // 通知を表示
-    chrome.notifications.create({
-      type: "basic",
-      iconUrl: "icon48.png",
-      title: "検索が一時停止されました",
-      message: "reCAPTCHAによる確認が必要です。手動で対応してください。",
-      priority: 2,
-      requireInteraction: true,
-    });
-
-    // ポップアップに通知
-    chrome.runtime.sendMessage({
-      type: "RECAPTCHA_INTERRUPT",
-      payload: {
-        lastKeyword: keyword,
-        currentCount: processedCount,
-        totalCount: totalKeywords,
-        url: url,
-        timestamp: new Date().toISOString(),
-      },
-    });
-
-    // 一時停止状態を保存
-    await chrome.storage.local.set({
-      pausedState: {
-        lastKeyword: keyword,
-        processedCount: processedCount,
-        totalKeywords: totalKeywords,
-        timestamp: new Date().toISOString(),
-      },
-    });
-  } catch (error) {
-    console.error("reCAPTCHAエラーハンドリング中のエラー:", error);
-  }
-}
-
-// キーワード検索を実行する関数を修正
-function searchKeyword(keyword) {
-  // 現在のタブを取得
-  chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
-    const currentTab = tabs[0];
-
-    // スクリプトを実行
-    chrome.scripting.executeScript({
-      target: { tabId: currentTab.id },
-      func: (keyword) => {
-        // Google検索フォームの要素を取得
-        const searchInput = document.querySelector('input[name="q"]');
-        const searchForm = document.querySelector('form[role="search"]');
-
-        if (searchInput && searchForm) {
-          // 検索フォームに値を設定
-          searchInput.value = keyword;
-          // フォームをサブミット
-          searchForm.submit();
-        }
-      },
-      args: [keyword],
-    });
-  });
-}
-
-// メッセージリスナーでsearchKeyword関数を呼び出す
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === "searchKeyword") {
-    searchKeyword(request.keyword);
-  }
-  // ... 他のメッセージハンドリング ...
 });
 
 // 分析用ウィンドウを取得または作成する関数

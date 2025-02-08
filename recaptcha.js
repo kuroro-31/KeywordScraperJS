@@ -7,22 +7,37 @@ const RecaptchaDetector = {
       "#captcha-form",
       'iframe[src*="recaptcha"]',
       'script[src*="recaptcha"]',
+      'div[class*="captcha"]',
+      'div[class*="recaptcha"]',
     ],
     TEXT_CONTENT: [
       "通常と異なるトラフィックが検出されました",
       "このページについて",
       "セキュリティ チェック",
       "reCAPTCHA による確認",
+      "ロボットではありません",
+      "verify you're human",
+      "security check",
     ],
-    URLS: ["google.com/sorry/", "/recaptcha/", "sorry/index"],
+    URLS: [
+      "google.com/sorry/",
+      "/recaptcha/",
+      "sorry/index",
+      "challenge",
+      "verify",
+    ],
   },
 
   detect() {
-    if (this.checkElements() || this.checkTextContent() || this.checkURL()) {
-      this.notifyRecaptchaDetected();
-      return true;
-    }
-    return false;
+    const detectionMethods = [
+      this.checkElements(),
+      this.checkTextContent(),
+      this.checkURL(),
+      this.checkNetworkRequests(),
+    ];
+
+    // 2つ以上の検出方法でヒットした場合にリキャプチャと判定
+    return detectionMethods.filter(Boolean).length >= 2;
   },
 
   checkElements() {
@@ -42,6 +57,14 @@ const RecaptchaDetector = {
     const currentURL = window.location.href.toLowerCase();
     return this.RECAPTCHA_INDICATORS.URLS.some((urlPart) => {
       return currentURL.includes(urlPart);
+    });
+  },
+
+  checkNetworkRequests() {
+    return performance.getEntries().some((entry) => {
+      return (
+        entry.name.includes("recaptcha") || entry.name.includes("challenge")
+      );
     });
   },
 

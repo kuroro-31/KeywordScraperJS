@@ -31,6 +31,23 @@
   // 検索結果を解析する関数を修正
   function analyzeSearchResults() {
     try {
+      // ランダムなスクロールパターンを追加
+      const scrollPatterns = [
+        { delay: 1000, duration: 2000 }, // 1秒待機後、2秒かけてスクロール
+        { delay: 500, duration: 1500 },  // 0.5秒待機後、1.5秒かけてスクロール
+        { delay: 1500, duration: 2500 }  // 1.5秒待機後、2.5秒かけてスクロール
+      ];
+      
+      const pattern = scrollPatterns[Math.floor(Math.random() * scrollPatterns.length)];
+      
+      setTimeout(() => {
+        window.scrollTo({
+          top: document.body.scrollHeight,
+          behavior: 'smooth',
+          duration: pattern.duration
+        });
+      }, pattern.delay);
+
       // 検索結果の総ヒット数を取得
       let totalHitCount = 0;
       const resultStats = document.getElementById("result-stats");
@@ -185,16 +202,31 @@
 
   // 検索キーワードを入力して検索を実行する関数を追加
   function executeSearch(keyword) {
-    // 検索フォームを取得
-    const searchInput = document.querySelector('textarea[name="q"]');
-    const searchForm = document.querySelector("form");
+    try {
+      const searchInput = document.querySelector('textarea[name="q"]');
+      const searchForm = document.querySelector("form");
 
-    if (searchInput && searchForm) {
-      // 検索キーワードを設定
-      searchInput.value = keyword;
+      if (searchInput && searchForm) {
+        // キーワードを1文字ずつ入力（人間らしい動作を模倣）
+        const inputDelay = 50; // 50msごとに1文字入力（100msから短縮）
+        const inputValue = keyword.split("");
 
-      // フォームをサブミット
-      searchForm.submit();
+        const typeCharacter = (index) => {
+          if (index < inputValue.length) {
+            searchInput.value += inputValue[index];
+            setTimeout(() => typeCharacter(index + 1), inputDelay);
+          } else {
+            // ランダムな待機時間後にフォームを送信（1-2秒に短縮）
+            const submitDelay = Math.floor(Math.random() * 1000) + 1000;
+            setTimeout(() => searchForm.submit(), submitDelay);
+          }
+        };
+
+        typeCharacter(0);
+      }
+    } catch (error) {
+      console.error("検索実行エラー:", error);
+      throw error;
     }
   }
 

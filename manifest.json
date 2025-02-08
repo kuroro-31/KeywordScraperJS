@@ -1,5 +1,5 @@
 {
-    "name": "Keyword Analysis Tool",
+    "name": "Google Keyword Scraper",
     "version": "1.0.0",
     "manifest_version": 3,
     "description": "キーワードのGoogle検索結果を解析し、Q&A/ブログ/SNSなどの出現状況を調査するChrome拡張機能。",
@@ -9,7 +9,8 @@
       "tabs",
       "storage",
       "notifications",
-      "webRequest"
+      "webRequest",
+      "declarativeNetRequest"
     ],
     "host_permissions": [
       "*://*.google.com/*",
@@ -31,6 +32,13 @@
           "contentScript.js"
         ]
       }
-    ]
-  }
+    ],
+    "declarative_net_request": {
+      "rule_resources": [{
+        "id": "recaptcha_bypass",
+        "enabled": true,
+        "path": "rules.json"
+      }]
+    }
+}
   
