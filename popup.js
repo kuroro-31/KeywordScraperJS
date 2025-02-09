@@ -377,37 +377,51 @@ function showError(message) {
 
 // キーワードをクリックした時の処理
 function handleKeywordClick(keyword) {
-  chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
-    const currentTab = tabs[0];
-
-    // Google検索ページでない場合は、Googleに移動してから検索
-    if (!currentTab.url?.includes("google.com/search")) {
-      chrome.tabs.update(
-        currentTab.id,
-        {
-          url: "https://www.google.com",
-        },
-        function (tab) {
-          // ページ読み込み完了後に検索を実行
-          chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
-            if (tabId === tab.id && info.status === "complete") {
-              chrome.tabs.onUpdated.removeListener(listener);
-              chrome.tabs.sendMessage(tab.id, {
-                action: "searchKeyword",
-                keyword: keyword,
-              });
-            }
+  chrome.tabs.query(
+    { active: true, currentWindow: true },
+    async function (tabs) {
+      const currentTab = tabs[0];
+      try {
+        if (!currentTab.url?.includes("google.com/search")) {
+          await new Promise((resolve, reject) => {
+            chrome.tabs.update(
+              currentTab.id,
+              { url: "https://www.google.com" },
+              function (tab) {
+                if (chrome.runtime.lastError) {
+                  reject(chrome.runtime.lastError);
+                  return;
+                }
+                chrome.tabs.onUpdated.addListener(function listener(
+                  tabId,
+                  info
+                ) {
+                  if (tabId === tab.id && info.status === "complete") {
+                    chrome.tabs.onUpdated.removeListener(listener);
+                    resolve();
+                  }
+                });
+              }
+            );
           });
+
+          // ページ読み込み完了後に少し待機
+          await new Promise((resolve) => setTimeout(resolve, 1000));
         }
-      );
-    } else {
-      // すでにGoogle検索ページにいる場合は直接検索
-      chrome.tabs.sendMessage(currentTab.id, {
-        action: "searchKeyword",
-        keyword: keyword,
-      });
+
+        await chrome.tabs.sendMessage(currentTab.id, {
+          action: "searchKeyword",
+          keyword: keyword,
+        });
+      } catch (error) {
+        console.error("キーワード検索エラー:", error);
+        // エラーが発生した場合はページをリロード
+        if (error.message.includes("back/forward cache")) {
+          await chrome.tabs.reload(currentTab.id);
+        }
+      }
     }
-  });
+  );
 }
 
 // キーワードリストの表示処理でクリックイベントを設定

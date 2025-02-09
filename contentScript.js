@@ -34,17 +34,18 @@
       // ランダムなスクロールパターンを追加
       const scrollPatterns = [
         { delay: 1000, duration: 2000 }, // 1秒待機後、2秒かけてスクロール
-        { delay: 500, duration: 1500 },  // 0.5秒待機後、1.5秒かけてスクロール
-        { delay: 1500, duration: 2500 }  // 1.5秒待機後、2.5秒かけてスクロール
+        { delay: 500, duration: 1500 }, // 0.5秒待機後、1.5秒かけてスクロール
+        { delay: 1500, duration: 2500 }, // 1.5秒待機後、2.5秒かけてスクロール
       ];
-      
-      const pattern = scrollPatterns[Math.floor(Math.random() * scrollPatterns.length)];
-      
+
+      const pattern =
+        scrollPatterns[Math.floor(Math.random() * scrollPatterns.length)];
+
       setTimeout(() => {
         window.scrollTo({
           top: document.body.scrollHeight,
-          behavior: 'smooth',
-          duration: pattern.duration
+          behavior: "smooth",
+          duration: pattern.duration,
         });
       }, pattern.delay);
 
@@ -234,6 +235,7 @@
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === "searchKeyword") {
       executeSearch(message.keyword);
+      return true;
     }
   });
 })();

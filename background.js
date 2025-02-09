@@ -308,8 +308,18 @@ async function handleRecaptchaError(
   }
 }
 
-// searchSingleKeyword関数を修正
+// searchSingleKeyword関数を修正（normalUrl等をtryブロック外で定義）
 async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
+  const normalUrl = `https://www.google.com/search?q=${encodeURIComponent(
+    keyword
+  )}`;
+  const intitleUrl = `https://www.google.com/search?q=intitle:${encodeURIComponent(
+    keyword
+  )}`;
+  const allintitleUrl = `https://www.google.com/search?q=allintitle:${encodeURIComponent(
+    keyword
+  )}`;
+
   try {
     const startTime = Date.now();
 
@@ -338,16 +348,6 @@ async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
         },
       ],
     });
-
-    const normalUrl = `https://www.google.com/search?q=${encodeURIComponent(
-      keyword
-    )}`;
-    const intitleUrl = `https://www.google.com/search?q=intitle:${encodeURIComponent(
-      keyword
-    )}`;
-    const allintitleUrl = `https://www.google.com/search?q=allintitle:${encodeURIComponent(
-      keyword
-    )}`;
 
     // 専用の分析ウィンドウを作成（存在しない場合）
     let analysisWindow = await getOrCreateAnalysisWindow();
@@ -702,3 +702,18 @@ async function cleanupAnalysisWindow() {
     analysisWindowId = null;
   }
 }
+
+// タブとの通信でエラーが発生した場合の再試行ロジック
+const communicateWithTab = async (tabId, retries = 3) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await chrome.tabs.sendMessage(tabId, {
+        action: "searchKeyword",
+        keyword: keyword,
+      });
+    } catch (err) {
+      if (i === retries - 1) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+};
