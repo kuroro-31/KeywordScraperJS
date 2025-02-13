@@ -1,5 +1,14 @@
 // background.js
 
+// リクエスト間隔（ミリ秒）
+const REQUEST_INTERVAL_MIN = 5000; // 5秒
+const REQUEST_INTERVAL_MAX = 10000; // 10秒
+
+// ランダムな待機時間を取得する関数
+function getRandomDelay(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
 // 分析対象のキーワードリスト
 let keywordQueue = [];
 let currentIndex = 0;
@@ -121,7 +130,7 @@ async function processKeywords(keywords) {
           },
         });
 
-        // エラー通知を送信（ブロードキャスト）
+        // エラー通知（ブロードキャスト）
         chrome.runtime.sendMessage({
           type: "ANALYSIS_ERROR",
           payload: {
@@ -131,19 +140,6 @@ async function processKeywords(keywords) {
             totalCount: totalKeywords,
           },
         });
-
-        // Slack通知
-        await notifySlack(
-          `処理中にエラーが発生しました: ${error.message}`,
-          chunks[i][0],
-          processedCount,
-          totalKeywords,
-          error.url ||
-            `https://www.google.com/search?q=${encodeURIComponent(
-              chunks[i][0]
-            )}`
-        );
-
         return;
       }
     }
@@ -160,15 +156,6 @@ async function processKeywords(keywords) {
       type: "ANALYSIS_FINISHED",
     });
 
-    // Slack通知
-    await notifySlack(
-      "全てのキーワード分析が完了しました",
-      "",
-      totalKeywords,
-      totalKeywords,
-      ""
-    );
-
     await cleanupAnalysisWindow();
   } catch (error) {
     console.error("処理エラー:", error);
@@ -183,7 +170,6 @@ async function processKeywords(keywords) {
   }
 }
 
-// 検索結果を解析する関数を削除（contentScript.jsに移動）
 // searchKeywords関数を修正
 async function searchKeywords(keywordChunk, processedCount, totalKeywords) {
   console.log("検索開始:", keywordChunk);
@@ -265,136 +251,156 @@ async function searchKeywords(keywordChunk, processedCount, totalKeywords) {
   return localProcessedCount;
 }
 
-// リキャプチャ検出時の待機時間をランダム化
-const MIN_RETRY_DELAY = 120000; // 2分
-const MAX_RETRY_DELAY = 300000; // 5分
-
-async function handleRecaptchaError(
-  keyword,
-  processedCount,
-  totalKeywords,
-  url
-) {
-  try {
-    // 待機時間をランダム化
-    const waitTime =
-      Math.floor(Math.random() * (MAX_RETRY_DELAY - MIN_RETRY_DELAY)) +
-      MIN_RETRY_DELAY;
-    console.log(`リキャプチャ検出 - ${waitTime / 1000}秒待機後にリトライ`);
-
-    // 待機中に進捗を更新
-    for (let remaining = waitTime; remaining > 0; remaining -= 1000) {
-      await chrome.storage.local.set({
-        progressStatus: {
-          currentKeyword: "リキャプチャ待機中",
-          progressText: `再試行まで残り${Math.round(
-            remaining / 1000
-          )}秒 (${processedCount}/${totalKeywords}キーワード完了)`,
-        },
-      });
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
-
-    // Slack通知
-    await notifySlack(
-      "リキャプチャ検出により一時停止中。自動的に再試行します。",
-      keyword,
-      processedCount,
-      totalKeywords,
-      url
-    );
-  } catch (error) {
-    console.error("リキャプチャエラーハンドリング中のエラー:", error);
-  }
-}
-
-// searchSingleKeyword関数を修正（normalUrl等をtryブロック外で定義）
+// searchSingleKeyword関数を修正（検索順序変更：allintitle → intitle → ノーマル）
+// ※以下で、条件に該当する場合は各項目に「スキップ対象」と返すようにしています。
 async function searchSingleKeyword(keyword, processedCount, totalKeywords) {
-  const normalUrl = `https://www.google.com/search?q=${encodeURIComponent(
-    keyword
-  )}`;
-  const intitleUrl = `https://www.google.com/search?q=intitle:${encodeURIComponent(
-    keyword
-  )}`;
-  const allintitleUrl = `https://www.google.com/search?q=allintitle:${encodeURIComponent(
-    keyword
-  )}`;
-
   try {
     const startTime = Date.now();
 
-    // ランダムなユーザーエージェントを設定
-    const userAgent = getRandomUserAgent();
-    await chrome.declarativeNetRequest.updateDynamicRules({
-      removeRuleIds: [1], // 既存のルールを削除
-      addRules: [
-        {
-          id: 1,
-          priority: 1,
-          action: {
-            type: "modifyHeaders",
-            requestHeaders: [
-              {
-                header: "User-Agent",
-                operation: "set",
-                value: userAgent,
-              },
-            ],
-          },
-          condition: {
-            urlFilter: "*://*.google.com/*",
-            resourceTypes: ["main_frame"],
-          },
-        },
-      ],
-    });
+    // 検索URLを構築
+    const normalUrl = `https://www.google.com/search?q=${encodeURIComponent(
+      keyword
+    )}`;
+    const intitleUrl = `https://www.google.com/search?q=intitle:${encodeURIComponent(
+      keyword
+    )}`;
+    const allintitleUrl = `https://www.google.com/search?q=allintitle:${encodeURIComponent(
+      keyword
+    )}`;
 
-    // 専用の分析ウィンドウを作成（存在しない場合）
-    let analysisWindow = await getOrCreateAnalysisWindow();
-
-    // --- 1. 通常の検索 ---
-    let tab = await createOrUpdateTab(analysisWindow.id, normalUrl);
-    let normalResults = await waitForSearchResults(tab.id);
-
-    // 各検索の間に十分な待機時間を設定
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    // --- 2. intitle検索 ---
-    await chrome.tabs.update(tab.id, { url: intitleUrl });
-    let intitleResults = await waitForSearchResults(tab.id);
-
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    // --- 3. allintitle検索 ---
-    await chrome.tabs.update(tab.id, { url: allintitleUrl });
-    let allintitleResults = await waitForSearchResults(tab.id);
-
-    const endTime = Date.now();
-    const processingTime = ((endTime - startTime) / 1000).toFixed(1);
-
-    return {
-      Keyword: keyword || "",
-      allintitle件数: allintitleResults?.totalHitCount || 0,
-      intitle件数: intitleResults?.totalHitCount || 0,
-      "Q&A件数": normalResults?.QA_count || 0,
-      "Q&A最高順位": normalResults?.QA_highestRank || null,
-      無料ブログ件数: normalResults?.Blog_count || 0,
-      ブログ最高順位: normalResults?.Blog_highestRank || null,
-      SNS件数: normalResults?.SNS_count || 0,
-      SNS最高順位: normalResults?.SNS_highestRank || null,
-      sns_details: normalResults?.sns_details || {},
-      処理時間: `${processingTime}秒`,
-    };
-  } catch (error) {
-    if (error.message === "RECAPTCHA_DETECTED") {
-      await handleRecaptchaError(
-        keyword,
-        processedCount,
-        totalKeywords,
-        normalUrl
+    try {
+      // リクエスト間のランダムな待機時間を追加
+      await new Promise((resolve) =>
+        setTimeout(
+          resolve,
+          getRandomDelay(REQUEST_INTERVAL_MIN, REQUEST_INTERVAL_MAX)
+        )
       );
+
+      // ランダムなユーザーエージェントを設定
+      const userAgent = getRandomUserAgent();
+      await chrome.declarativeNetRequest.updateDynamicRules({
+        removeRuleIds: [1],
+        addRules: [
+          {
+            id: 1,
+            priority: 1,
+            action: {
+              type: "modifyHeaders",
+              requestHeaders: [
+                {
+                  header: "User-Agent",
+                  operation: "set",
+                  value: userAgent,
+                },
+              ],
+            },
+            condition: {
+              urlFilter: "*://*.google.com/*",
+              resourceTypes: ["main_frame"],
+            },
+          },
+        ],
+      });
+
+      // 専用の分析ウィンドウを作成
+      let analysisWindow = await getOrCreateAnalysisWindow();
+
+      // --- 1. allintitle検索 ---
+      let tab = await createOrUpdateTab(analysisWindow.id, allintitleUrl);
+      let allintitleResults = await waitForSearchResults(tab.id);
+
+      // 条件1：allintitleの件数が10件以上の場合はスキップ
+      if ((allintitleResults?.totalHitCount || 0) >= 10) {
+        const endTime = Date.now();
+        const processingTime = ((endTime - startTime) / 1000).toFixed(1);
+        return {
+          Keyword: keyword || "",
+          allintitle件数: "スキップ対象",
+          intitle件数: "スキップ対象",
+          "Q&A件数": "スキップ対象",
+          "Q&A最高順位": "スキップ対象",
+          無料ブログ件数: "スキップ対象",
+          ブログ最高順位: "スキップ対象",
+          SNS件数: "スキップ対象",
+          SNS最高順位: "スキップ対象",
+          sns_details: "スキップ対象",
+          処理時間: `${processingTime}秒`,
+        };
+      }
+
+      // 各検索の間にランダムな待機時間を設定
+      await new Promise((resolve) =>
+        setTimeout(
+          resolve,
+          getRandomDelay(REQUEST_INTERVAL_MIN, REQUEST_INTERVAL_MAX)
+        )
+      );
+
+      // --- 2. intitle検索 ---
+      await chrome.tabs.update(tab.id, { url: intitleUrl });
+      let intitleResults = await waitForSearchResults(tab.id);
+
+      // 条件2：intitleの件数が30,000件以上の場合はスキップ
+      if ((intitleResults?.totalHitCount || 0) >= 30000) {
+        const endTime = Date.now();
+        const processingTime = ((endTime - startTime) / 1000).toFixed(1);
+        return {
+          Keyword: keyword || "",
+          allintitle件数: "スキップ対象",
+          intitle件数: "スキップ対象",
+          "Q&A件数": "スキップ対象",
+          "Q&A最高順位": "スキップ対象",
+          無料ブログ件数: "スキップ対象",
+          ブログ最高順位: "スキップ対象",
+          SNS件数: "スキップ対象",
+          SNS最高順位: "スキップ対象",
+          sns_details: "スキップ対象",
+          処理時間: `${processingTime}秒`,
+        };
+      }
+
+      await new Promise((resolve) =>
+        setTimeout(
+          resolve,
+          getRandomDelay(REQUEST_INTERVAL_MIN, REQUEST_INTERVAL_MAX)
+        )
+      );
+
+      // --- 3. ノーマル検索 ---
+      await chrome.tabs.update(tab.id, { url: normalUrl });
+      let normalResults = await waitForSearchResults(tab.id);
+
+      const endTime = Date.now();
+      const processingTime = ((endTime - startTime) / 1000).toFixed(1);
+
+      return {
+        Keyword: keyword || "",
+        allintitle件数: allintitleResults?.totalHitCount || 0,
+        intitle件数: intitleResults?.totalHitCount || 0,
+        "Q&A件数": normalResults?.QA_count || 0,
+        "Q&A最高順位": normalResults?.QA_highestRank || null,
+        無料ブログ件数: normalResults?.Blog_count || 0,
+        ブログ最高順位: normalResults?.Blog_highestRank || null,
+        SNS件数: normalResults?.SNS_count || 0,
+        SNS最高順位: normalResults?.SNS_highestRank || null,
+        sns_details: normalResults?.sns_details || {},
+        処理時間: `${processingTime}秒`,
+      };
+    } catch (error) {
+      if (error.message === "RECAPTCHA_DETECTED") {
+        await handleRecaptchaError(
+          keyword,
+          processedCount,
+          totalKeywords,
+          normalUrl
+        );
+        throw error;
+      }
+      console.error("検索エラー:", error);
       throw error;
     }
+  } catch (error) {
     console.error("検索エラー:", error);
     throw error;
   }
@@ -423,81 +429,6 @@ function waitForSearchResults(tabId) {
       reject(new Error("TIMEOUT"));
     }, 30000);
   });
-}
-
-// リキャプチャ検出時のSlack通知関数
-async function notifySlack(
-  message,
-  keyword = "",
-  processedCount = 0,
-  totalKeywords = 0,
-  errorUrl = ""
-) {
-  console.log("Slack通知開始:", {
-    message,
-    keyword,
-    processedCount,
-    totalKeywords,
-    errorUrl,
-  });
-
-  try {
-    const result = await chrome.storage.local.get("slackWebhookUrl");
-    const SLACK_WEBHOOK_URL = result.slackWebhookUrl;
-
-    if (!SLACK_WEBHOOK_URL) {
-      console.error("Slack Webhook URLが設定されていません");
-      return;
-    }
-
-    const response = await fetch(SLACK_WEBHOOK_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        text: "🚨 キーワード分析アラート",
-        blocks: [
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: `*${message}*`,
-            },
-          },
-          {
-            type: "section",
-            fields: [
-              {
-                type: "mrkdwn",
-                text: `*キーワード:*\n${keyword || "不明"}`,
-              },
-              {
-                type: "mrkdwn",
-                text: `*進捗状況:*\n${processedCount}/${totalKeywords} キーワード完了`,
-              },
-              {
-                type: "mrkdwn",
-                text: `*発生時刻:*\n${new Date().toLocaleString("ja-JP")}`,
-              },
-              {
-                type: "mrkdwn",
-                text: `*URL:*\n${errorUrl || "不明"}`,
-              },
-            ],
-          },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Slack通知エラー: ${response.status}`);
-    }
-
-    console.log("Slack通知成功:", await response.text());
-  } catch (error) {
-    console.error("Slack通知エラー:", error);
-  }
 }
 
 // Google検索URLを開き、contentScriptからDOM解析結果を受け取る
@@ -595,15 +526,6 @@ chrome.webRequest?.onCompleted?.addListener(
           chrome.runtime.sendMessage({
             type: "RECAPTCHA_INTERRUPT",
           });
-
-          // Slackに通知（URLを追加）
-          notifySlack(
-            "Googleの検索でreCAPTCHAが表示されています。手動での対応が必要です。",
-            keywordQueue[currentIndex],
-            currentIndex,
-            keywordQueue.length,
-            tab.url // URLを追加
-          );
         }
       });
     }
@@ -623,15 +545,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // リキャプチャ検出時のメッセージ処理を修正
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "RECAPTCHA_DETECTED") {
-    // Slackに通知
-    notifySlack(
-      "リキャプチャが検出されました。手動での対応が必要です。",
-      message.keyword || "不明",
-      message.currentCount || 0,
-      message.totalCount || 0,
-      message.errorUrl || ""
-    );
-
     // ポップアップに通知
     chrome.runtime.sendMessage({
       type: "RECAPTCHA_INTERRUPT",
