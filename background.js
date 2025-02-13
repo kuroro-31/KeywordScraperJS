@@ -251,6 +251,32 @@ async function searchKeywords(keywordChunk, processedCount, totalKeywords) {
   return localProcessedCount;
 }
 
+// 新しく handleRecaptchaError 関数を追加
+async function handleRecaptchaError(
+  keyword,
+  processedCount,
+  totalKeywords,
+  normalUrl
+) {
+  console.warn("handleRecaptchaError: reCAPTCHAが検出されました。", {
+    keyword,
+    processedCount,
+    totalCount: totalKeywords,
+    errorUrl: normalUrl,
+  });
+  chrome.runtime.sendMessage({
+    type: "RECAPTCHA_INTERRUPT",
+    payload: {
+      lastKeyword: keyword,
+      currentCount: processedCount,
+      totalCount: totalKeywords,
+      errorUrl: normalUrl,
+    },
+  });
+  // 60秒待機する
+  await new Promise((resolve) => setTimeout(resolve, 60000));
+}
+
 // searchSingleKeyword関数を修正（検索順序変更：allintitle → intitle → ノーマル）
 // ※以下で、条件に該当する場合は各項目に「スキップ対象」と返すようにしています。
 async function searchSingleKeyword(keyword, processedCount, totalKeywords) {

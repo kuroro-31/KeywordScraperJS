@@ -188,38 +188,24 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // Webhook URLを保存
-  saveSlackUrlBtn.addEventListener("click", () => {
-    const webhookUrl = slackUrlInput.value.trim();
-    if (webhookUrl) {
-      chrome.storage.local.set({ slackWebhookUrl: webhookUrl }, () => {
-        saveSlackUrlBtn.textContent = "保存しました！";
-        setTimeout(() => {
-          saveSlackUrlBtn.textContent = "保存";
-          // 保存成功後に設定セクションを非表示
-          slackSettingsSection.style.display = "none";
-          toggleSettingsLink.textContent = "Slack設定を表示";
-        }, 2000);
-      });
-    }
-  });
-
   // 結果をクリアするボタンの処理を修正
   document
     .getElementById("clear-results-btn")
     .addEventListener("click", async () => {
-      if (confirm("保存された結果をすべてクリアしますか？")) {
+      if (window.confirm("保存された結果をすべてクリアしますか？")) {
         // 結果配列をクリア
         collectedResults = [];
 
         // ストレージから結果を削除
         await chrome.storage.local.remove("analysisResults");
 
-        // 表示要素をクリア
-        document.getElementById("csv-preview").textContent = "";
+        // updateCsvPreviewを空の配列で呼び出して#csv-previewをクリア
+        updateCsvPreview([]);
+
+        // 結果表示用コンテナをクリア
         document.getElementById("results-container").textContent = "";
 
-        // 表示要素を非表示
+        // 必要な要素を非表示にする
         document.getElementById("csv-preview").style.display = "none";
         document.getElementById("copy-csv-btn").style.display = "none";
         document.getElementById("clear-results-btn").style.display = "none";
@@ -316,6 +302,11 @@ function displayResults(results) {
 // CSV形式のプレビューを更新する関数を修正
 function updateCsvPreview(results) {
   const csvPreview = document.getElementById("csv-preview");
+  if (!results || results.length === 0) {
+    // If results is empty, clear preview and return
+    csvPreview.textContent = "";
+    return;
+  }
   const headers = [
     "キーワード",
     "allintitle件数",
@@ -328,10 +319,8 @@ function updateCsvPreview(results) {
     "SNS最高順位",
   ];
 
-  // 全ての結果を表示するように変更
   let csvContent = headers.join("\t") + "\n";
 
-  // 全ての結果をループで処理
   results.forEach((result) => {
     const row = [
       result.Keyword,
@@ -344,14 +333,14 @@ function updateCsvPreview(results) {
       result.SNS件数,
       result.SNS最高順位,
     ]
-      .map((cell) => String(cell || "")) // nullやundefinedを空文字に変換
+      .map((cell) => String(cell || ""))
       .join("\t");
 
     csvContent += row + "\n";
   });
 
   csvPreview.textContent = csvContent;
-  csvPreview.scrollTop = csvPreview.scrollHeight; // 自動スクロール
+  csvPreview.scrollTop = csvPreview.scrollHeight;
 }
 
 // コピーボタンの処理を追加
