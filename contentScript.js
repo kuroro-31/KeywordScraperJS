@@ -1,17 +1,75 @@
 // contentScript.js
 (() => {
-  // リキャプチャページの検出
+  // リキャプチャページの検出 - 強化版
   function detectRecaptcha() {
     // 通常のリキャプチャフレーム
     const recaptchaFrame = document.querySelector('iframe[src*="recaptcha"]');
+    const challengeFrame = document.querySelector('iframe[src*="challenge"]');
+    const captchaForm = document.querySelector("form#captcha-form");
+    const recaptchaElements = document.querySelectorAll(
+      '.g-recaptcha, div[class*="captcha"], div[id*="captcha"]'
+    );
 
     // Googleのsorryページの検出
     const isSorryPage =
       window.location.href.includes("/sorry/index") ||
+      window.location.href.includes("/sorry?") ||
+      window.location.href.includes("security_check") ||
       document.title.includes("Sorry") ||
+      document.title.includes("Security Check") ||
+      document.title.includes("セキュリティ チェック") ||
       document.querySelector("form#captcha-form");
 
-    if (recaptchaFrame || isSorryPage) {
+    // テキストコンテンツによる検出
+    const bodyText = document.body?.textContent?.toLowerCase() || "";
+    const suspiciousTexts = [
+      "通常と異なるトラフィックが検出されました",
+      "このページについて",
+      "セキュリティ チェック",
+      "reCAPTCHA による確認",
+      "ロボットではありません",
+      "verify you're human",
+      "security check",
+      "unusual traffic",
+      "automated queries",
+      "bot check",
+      "human verification",
+    ];
+    const hasRecaptchaText = suspiciousTexts.some((text) =>
+      bodyText.includes(text.toLowerCase())
+    );
+
+    // ネットワークリクエストによる検出
+    const hasRecaptchaRequests = performance.getEntries().some((entry) => {
+      const url = entry.name.toLowerCase();
+      return (
+        url.includes("recaptcha") ||
+        url.includes("challenge") ||
+        url.includes("captcha") ||
+        url.includes("sorry")
+      );
+    });
+
+    if (
+      recaptchaFrame ||
+      challengeFrame ||
+      captchaForm ||
+      recaptchaElements.length > 0 ||
+      isSorryPage ||
+      hasRecaptchaText ||
+      hasRecaptchaRequests
+    ) {
+      // 検出理由の詳細を収集
+      const detectionReasons = {
+        recaptchaFrame: !!recaptchaFrame,
+        challengeFrame: !!challengeFrame,
+        captchaForm: !!captchaForm,
+        recaptchaElements: recaptchaElements.length > 0,
+        isSorryPage: isSorryPage,
+        hasRecaptchaText: hasRecaptchaText,
+        hasRecaptchaRequests: hasRecaptchaRequests,
+      };
+
       // より詳細な情報を含めてメッセージを送信
       chrome.runtime.sendMessage({
         type: "RECAPTCHA_DETECTED",
@@ -21,11 +79,131 @@
           // URLからキーワードを抽出する試み
           keyword:
             new URLSearchParams(window.location.search).get("q") || undefined,
+          detectionReasons: detectionReasons,
+          pageTitle: document.title,
+          pageContent: bodyText.substring(0, 200), // 最初の200文字だけ送信
         },
       });
+
+      // リキャプチャ回避を試みる
+      attemptRecaptchaBypass();
       return true;
     }
     return false;
+  }
+
+  // リキャプチャ回避を試みる関数
+  function attemptRecaptchaBypass() {
+    // 1. ページの動作を一時停止（自動化検出を避けるため）
+    setTimeout(() => {
+      // 2. 人間らしい動きをシミュレート
+      simulateHumanBehavior();
+
+      // 3. リキャプチャフォームがあれば、それを検出
+      const captchaForm = document.querySelector("form#captcha-form");
+      const recaptchaFrame = document.querySelector('iframe[src*="recaptcha"]');
+
+      if (captchaForm) {
+        // 4. フォームがある場合は、ユーザーに通知
+        chrome.runtime.sendMessage({
+          type: "RECAPTCHA_FORM_DETECTED",
+          payload: {
+            message:
+              "リキャプチャフォームが検出されました。手動での対応が必要です。",
+            url: window.location.href,
+          },
+        });
+      } else if (recaptchaFrame) {
+        // 5. フレームがある場合も、ユーザーに通知
+        chrome.runtime.sendMessage({
+          type: "RECAPTCHA_FRAME_DETECTED",
+          payload: {
+            message:
+              "リキャプチャフレームが検出されました。手動での対応が必要です。",
+            url: window.location.href,
+          },
+        });
+      } else {
+        // 6. それ以外の場合は、ページをリロード
+        setTimeout(() => {
+          // 50%の確率でリロード、50%の確率で前のページに戻る
+          if (Math.random() > 0.5) {
+            window.location.reload();
+          } else {
+            history.back();
+          }
+        }, getRandomDelay(3000, 8000));
+      }
+    }, getRandomDelay(2000, 5000));
+  }
+
+  // 人間らしい行動をシミュレートする関数
+  function simulateHumanBehavior() {
+    // ランダムなスクロール
+    const scrollAmount = Math.floor(Math.random() * window.innerHeight * 0.7);
+    window.scrollTo({
+      top: scrollAmount,
+      behavior: "smooth",
+    });
+
+    // ランダムなマウス移動をシミュレート（実際には動きませんが、イベントは発生）
+    for (let i = 0; i < 5; i++) {
+      setTimeout(() => {
+        const x = Math.floor(Math.random() * window.innerWidth);
+        const y = Math.floor(Math.random() * window.innerHeight);
+
+        const mouseEvent = new MouseEvent("mousemove", {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+          clientX: x,
+          clientY: y,
+        });
+
+        document.dispatchEvent(mouseEvent);
+      }, getRandomDelay(300, 1500));
+    }
+
+    // ランダムな要素をクリック（実際のクリックではなく、イベントのみ）
+    setTimeout(() => {
+      const allElements = document.querySelectorAll("a, button, input, div");
+      if (allElements.length > 0) {
+        const randomElement =
+          allElements[Math.floor(Math.random() * allElements.length)];
+
+        // クリックイベントを発生させるが、実際のアクションは起こさない
+        const clickEvent = new MouseEvent("mouseover", {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+        });
+
+        randomElement.dispatchEvent(clickEvent);
+      }
+    }, getRandomDelay(2000, 4000));
+  }
+
+  // ランダムな待機時間を取得する関数
+  function getRandomDelay(min, max) {
+    // より自然な分布のランダム値を生成
+    const gaussian = () => {
+      let u = 0,
+        v = 0;
+      while (u === 0) u = Math.random();
+      while (v === 0) v = Math.random();
+      return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+    };
+
+    // ガウス分布を使用して、より自然な待機時間を生成
+    const mean = (min + max) / 2;
+    const stdDev = (max - min) / 6; // 6シグマルール
+    let result;
+
+    do {
+      result = Math.round(gaussian() * stdDev + mean);
+    } while (result < min || result > max);
+
+    return result;
   }
 
   // 検索結果を解析する関数を修正

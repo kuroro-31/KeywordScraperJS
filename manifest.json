@@ -10,11 +10,15 @@
       "storage",
       "notifications",
       "webRequest",
-      "declarativeNetRequest"
+      "declarativeNetRequest",
+      "browsingData",
+      "cookies",
+      "webNavigation"
     ],
     "host_permissions": [
       "*://*.google.com/*",
-      "https://hooks.slack.com/*"
+      "https://hooks.slack.com/*",
+      "*://*.gstatic.com/*"
     ],
     "background": {
       "service_worker": "background.js"
@@ -25,12 +29,13 @@
     },
     "content_scripts": [
       {
-        "matches": ["*://*.google.com/*"],
+        "matches": ["*://*.google.com/*", "*://*.gstatic.com/*"],
         "js": [
           "constants.js",
           "recaptcha.js",
           "contentScript.js"
-        ]
+        ],
+        "run_at": "document_start"
       }
     ],
     "declarative_net_request": {
@@ -39,6 +44,12 @@
         "enabled": true,
         "path": "rules.json"
       }]
-    }
+    },
+    "web_accessible_resources": [
+      {
+        "resources": ["rules.json"],
+        "matches": ["*://*.google.com/*", "*://*.gstatic.com/*"]
+      }
+    ]
 }
   

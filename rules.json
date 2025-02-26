@@ -8,13 +8,121 @@
         {
           "header": "User-Agent",
           "operation": "set",
-          "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+          "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
         }
       ]
     },
     "condition": {
       "urlFilter": "*google.com*",
-      "resourceTypes": ["main_frame"]
+      "resourceTypes": ["main_frame", "sub_frame", "xmlhttprequest"]
+    }
+  },
+  {
+    "id": 2,
+    "priority": 2,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "Accept-Language",
+          "operation": "set",
+          "value": "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7"
+        }
+      ]
+    },
+    "condition": {
+      "urlFilter": "*google.com*",
+      "resourceTypes": ["main_frame", "sub_frame", "xmlhttprequest"]
+    }
+  },
+  {
+    "id": 3,
+    "priority": 3,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "Sec-Ch-Ua",
+          "operation": "set",
+          "value": "\"Not A(Brand\";v=\"99\", \"Google Chrome\";v=\"121\", \"Chromium\";v=\"121\""
+        }
+      ]
+    },
+    "condition": {
+      "urlFilter": "*google.com*",
+      "resourceTypes": ["main_frame", "sub_frame", "xmlhttprequest"]
+    }
+  },
+  {
+    "id": 4,
+    "priority": 4,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "Sec-Ch-Ua-Platform",
+          "operation": "set",
+          "value": "\"Windows\""
+        }
+      ]
+    },
+    "condition": {
+      "urlFilter": "*google.com*",
+      "resourceTypes": ["main_frame", "sub_frame", "xmlhttprequest"]
+    }
+  },
+  {
+    "id": 5,
+    "priority": 5,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "Sec-Ch-Ua-Mobile",
+          "operation": "set",
+          "value": "?0"
+        }
+      ]
+    },
+    "condition": {
+      "urlFilter": "*google.com*",
+      "resourceTypes": ["main_frame", "sub_frame", "xmlhttprequest"]
+    }
+  },
+  {
+    "id": 6,
+    "priority": 6,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "Accept",
+          "operation": "set",
+          "value": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+        }
+      ]
+    },
+    "condition": {
+      "urlFilter": "*google.com*",
+      "resourceTypes": ["main_frame", "sub_frame", "xmlhttprequest"]
+    }
+  },
+  {
+    "id": 7,
+    "priority": 7,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "Referer",
+          "operation": "set",
+          "value": "https://www.google.com/"
+        }
+      ]
+    },
+    "condition": {
+      "urlFilter": "*google.com/search*",
+      "resourceTypes": ["main_frame", "sub_frame", "xmlhttprequest"]
     }
   }
 ] 

@@ -1,26 +1,145 @@
 // background.js
 
-// リクエスト間隔（ミリ秒）
-const REQUEST_INTERVAL_MIN = 5000; // 3秒
-const REQUEST_INTERVAL_MAX = 15000; // 10秒
+// リクエスト間隔（ミリ秒）- より自然な間隔に調整
+const REQUEST_INTERVAL_MIN = 8000; // 8秒
+const REQUEST_INTERVAL_MAX = 25000; // 25秒
 
 // 拡張機能の初期化時にisAnalyzingをfalseに設定
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.local.set({ isAnalyzing: false }, () => {
-    console.log("初期化: isAnalyzing = false に設定しました");
-  });
+  chrome.storage.local.set(
+    {
+      isAnalyzing: false,
+      recaptchaStats: {
+        detectionCount: 0,
+        lastDetection: null,
+        recoveryAttempts: 0,
+        successfulRecoveries: 0,
+      },
+      browserFingerprint: generateRandomFingerprint(),
+    },
+    () => {
+      console.log("初期化: isAnalyzing = false に設定しました");
+    }
+  );
 });
 
 // 拡張機能起動時にもisAnalyzingをfalseに設定
 chrome.runtime.onStartup.addListener(() => {
-  chrome.storage.local.set({ isAnalyzing: false }, () => {
-    console.log("起動時: isAnalyzing = false に設定しました");
-  });
+  chrome.storage.local.set(
+    {
+      isAnalyzing: false,
+      // 起動時に新しいフィンガープリントを生成
+      browserFingerprint: generateRandomFingerprint(),
+    },
+    () => {
+      console.log("起動時: isAnalyzing = false に設定しました");
+    }
+  );
 });
+
+// ランダムなブラウザフィンガープリントを生成
+function generateRandomFingerprint() {
+  return {
+    screenResolution: getRandomScreenResolution(),
+    colorDepth: getRandomColorDepth(),
+    timezone: getRandomTimezone(),
+    language: getRandomLanguage(),
+    platform: getRandomPlatform(),
+    doNotTrack: Math.random() > 0.5 ? "1" : null,
+    cookiesEnabled: Math.random() > 0.9 ? false : true,
+    localStorage: Math.random() > 0.9 ? false : true,
+    sessionStorage: Math.random() > 0.9 ? false : true,
+    indexedDB: Math.random() > 0.8 ? false : true,
+    cpuCores: Math.floor(Math.random() * 8) + 2,
+    touchPoints: Math.random() > 0.7 ? Math.floor(Math.random() * 5) + 1 : 0,
+    deviceMemory: [2, 4, 8, 16][Math.floor(Math.random() * 4)],
+  };
+}
+
+// ランダムな画面解像度を取得
+function getRandomScreenResolution() {
+  const resolutions = [
+    { width: 1366, height: 768 },
+    { width: 1920, height: 1080 },
+    { width: 1440, height: 900 },
+    { width: 1536, height: 864 },
+    { width: 1280, height: 720 },
+    { width: 1600, height: 900 },
+    { width: 1280, height: 800 },
+    { width: 2560, height: 1440 },
+    { width: 3840, height: 2160 },
+  ];
+  return resolutions[Math.floor(Math.random() * resolutions.length)];
+}
+
+// ランダムな色深度を取得
+function getRandomColorDepth() {
+  return [24, 30, 32][Math.floor(Math.random() * 3)];
+}
+
+// ランダムなタイムゾーンを取得
+function getRandomTimezone() {
+  const timezones = [
+    "Asia/Tokyo",
+    "America/New_York",
+    "Europe/London",
+    "Europe/Paris",
+    "Asia/Singapore",
+    "Australia/Sydney",
+    "America/Los_Angeles",
+  ];
+  return timezones[Math.floor(Math.random() * timezones.length)];
+}
+
+// ランダムな言語を取得
+function getRandomLanguage() {
+  const languages = [
+    "ja-JP",
+    "en-US",
+    "en-GB",
+    "fr-FR",
+    "de-DE",
+    "es-ES",
+    "zh-CN",
+    "ko-KR",
+  ];
+  return languages[Math.floor(Math.random() * languages.length)];
+}
+
+// ランダムなプラットフォームを取得
+function getRandomPlatform() {
+  const platforms = [
+    "Win32",
+    "MacIntel",
+    "Linux x86_64",
+    "iPhone",
+    "iPad",
+    "Android",
+  ];
+  return platforms[Math.floor(Math.random() * platforms.length)];
+}
 
 // ランダムな待機時間を取得する関数
 function getRandomDelay(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+  // より自然な分布のランダム値を生成
+  const gaussian = () => {
+    let u = 0,
+      v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+  };
+
+  // ガウス分布を使用して、より自然な待機時間を生成
+  const mean = (min + max) / 2;
+  const stdDev = (max - min) / 6; // 6シグマルール
+  let result;
+
+  do {
+    result = Math.round(gaussian() * stdDev + mean);
+  } while (result < min || result > max);
+
+  return result;
 }
 
 // 分析対象のキーワードリスト
@@ -277,7 +396,7 @@ async function searchKeywords(keywordChunk, processedCount, totalKeywords) {
   return localProcessedCount;
 }
 
-// 新しく handleRecaptchaError 関数を追加
+// 新しく handleRecaptchaError 関数を強化
 async function handleRecaptchaError(
   keyword,
   processedCount,
@@ -290,6 +409,23 @@ async function handleRecaptchaError(
     totalCount: totalKeywords,
     errorUrl: normalUrl,
   });
+
+  // リキャプチャ統計を更新
+  const stored = await chrome.storage.local.get("recaptchaStats");
+  const stats = stored.recaptchaStats || {
+    detectionCount: 0,
+    lastDetection: null,
+    recoveryAttempts: 0,
+    successfulRecoveries: 0,
+  };
+
+  stats.detectionCount++;
+  stats.lastDetection = new Date().toISOString();
+  stats.recoveryAttempts++;
+
+  await chrome.storage.local.set({ recaptchaStats: stats });
+
+  // ユーザーに通知
   chrome.runtime.sendMessage({
     type: "RECAPTCHA_INTERRUPT",
     payload: {
@@ -297,10 +433,95 @@ async function handleRecaptchaError(
       currentCount: processedCount,
       totalCount: totalKeywords,
       errorUrl: normalUrl,
+      stats: stats,
     },
   });
-  // 60秒待機する
-  await new Promise((resolve) => setTimeout(resolve, 60000));
+
+  // リカバリー戦略を実行
+  await executeRecaptchaRecoveryStrategy();
+
+  // 回復待機時間を設定（60秒〜5分のランダムな時間）
+  const waitTime = getRandomDelay(60000, 300000);
+  console.log(`リキャプチャ検出後、${waitTime / 1000}秒待機します`);
+
+  // 待機中のステータス更新
+  for (let remaining = waitTime; remaining > 0; remaining -= 10000) {
+    await chrome.storage.local.set({
+      progressStatus: {
+        currentKeyword: "リキャプチャ回復待機中",
+        progressText: `再開まで残り約${Math.round(remaining / 1000)}秒`,
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10000));
+  }
+
+  // 新しいブラウザフィンガープリントを生成
+  const newFingerprint = generateRandomFingerprint();
+  await chrome.storage.local.set({ browserFingerprint: newFingerprint });
+
+  return true;
+}
+
+// リキャプチャからの回復戦略を実行
+async function executeRecaptchaRecoveryStrategy() {
+  // 1. 現在のタブをクリア
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tabs.length > 0) {
+      await chrome.tabs.update(tabs[0].id, { url: "about:blank" });
+    }
+  } catch (e) {
+    console.error("タブクリアエラー:", e);
+  }
+
+  // 2. キャッシュとCookieをクリア
+  try {
+    await chrome.browsingData.remove(
+      {
+        since: Date.now() - 15 * 60 * 1000, // 過去15分間のデータ
+      },
+      {
+        cache: true,
+        cookies: true,
+        localStorage: true,
+        sessionStorage: true,
+      }
+    );
+  } catch (e) {
+    console.error("ブラウジングデータクリアエラー:", e);
+  }
+
+  // 3. 新しいユーザーエージェントを設定
+  const userAgent = getRandomUserAgent();
+  try {
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: [1],
+      addRules: [
+        {
+          id: 1,
+          priority: 1,
+          action: {
+            type: "modifyHeaders",
+            requestHeaders: [
+              {
+                header: "User-Agent",
+                operation: "set",
+                value: userAgent,
+              },
+            ],
+          },
+          condition: {
+            urlFilter: "*://*.google.com/*",
+            resourceTypes: ["main_frame", "sub_frame", "xmlhttprequest"],
+          },
+        },
+      ],
+    });
+  } catch (e) {
+    console.error("ユーザーエージェント更新エラー:", e);
+  }
+
+  return true;
 }
 
 // searchSingleKeyword関数を修正（検索順序変更：allintitle → intitle → ノーマル）
@@ -535,15 +756,43 @@ function getSearchResults(searchUrl, keyword, processedCount, totalKeywords) {
   });
 }
 
-// reCAPTCHAページを検出する関数を修正
+// reCAPTCHAページを検出する関数を強化
 function isRecaptchaPage(url, html) {
-  return (
-    url.includes("google.com/sorry/") || // Google sorry ページの検出を追加
-    html.includes("g-recaptcha") ||
-    html.includes("recaptcha") ||
-    (html.includes("このページについて") &&
-      html.includes("通常と異なるトラフィックが検出されました"))
-  );
+  // URLベースの検出
+  const recaptchaUrls = [
+    "google.com/sorry/",
+    "/recaptcha/",
+    "sorry/index",
+    "challenge",
+    "verify",
+    "/sorry?",
+    "captcha",
+    "security_check",
+  ];
+
+  const urlMatch = recaptchaUrls.some((pattern) => url.includes(pattern));
+  if (urlMatch) return true;
+
+  // HTMLコンテンツベースの検出
+  if (!html) return false;
+
+  const recaptchaPatterns = [
+    "g-recaptcha",
+    "recaptcha",
+    "このページについて",
+    "通常と異なるトラフィックが検出されました",
+    "セキュリティ チェック",
+    "reCAPTCHA による確認",
+    "ロボットではありません",
+    "verify you're human",
+    "security check",
+    "unusual traffic",
+    "automated queries",
+    "bot check",
+    "human verification",
+  ];
+
+  return recaptchaPatterns.some((pattern) => html.includes(pattern));
 }
 
 // manifest.json で webRequest 権限が必要
