@@ -31,24 +31,6 @@
   // 検索結果を解析する関数を修正
   function analyzeSearchResults() {
     try {
-      // ランダムなスクロールパターンを追加
-      const scrollPatterns = [
-        { delay: 1000, duration: 2000 }, // 1秒待機後、2秒かけてスクロール
-        { delay: 500, duration: 1500 }, // 0.5秒待機後、1.5秒かけてスクロール
-        { delay: 1500, duration: 2500 }, // 1.5秒待機後、2.5秒かけてスクロール
-      ];
-
-      const pattern =
-        scrollPatterns[Math.floor(Math.random() * scrollPatterns.length)];
-
-      setTimeout(() => {
-        window.scrollTo({
-          top: document.body.scrollHeight,
-          behavior: "smooth",
-          duration: pattern.duration,
-        });
-      }, pattern.delay);
-
       // 検索結果の総ヒット数を取得
       let totalHitCount = 0;
       const resultStats = document.getElementById("result-stats");
@@ -146,9 +128,41 @@
     }
   }
 
+  // スクロール処理を行う関数
+  function performScroll() {
+    // ランダムなスクロールパターンを追加
+    const scrollPatterns = [
+      { delay: 1000, duration: 2000 }, // 1秒待機後、2秒かけてスクロール
+      { delay: 500, duration: 1500 }, // 0.5秒待機後、1.5秒かけてスクロール
+      { delay: 1500, duration: 2500 }, // 1.5秒待機後、2.5秒かけてスクロール
+    ];
+
+    const pattern =
+      scrollPatterns[Math.floor(Math.random() * scrollPatterns.length)];
+
+    setTimeout(() => {
+      window.scrollTo({
+        top: document.body.scrollHeight,
+        behavior: "smooth",
+        duration: pattern.duration,
+      });
+    }, pattern.delay);
+  }
+
   // メイン処理
   function main() {
     try {
+      // Googleの検索結果ページかどうかを確認
+      const isSearchResultPage =
+        window.location.href.includes("/search?") &&
+        document.querySelector("#search") !== null;
+
+      // 検索結果ページでない場合は処理を終了
+      if (!isSearchResultPage) {
+        console.log("検索結果ページではないため、分析をスキップします");
+        return;
+      }
+
       // リキャプチャチェック
       if (detectRecaptcha()) {
         chrome.runtime.sendMessage({
@@ -164,10 +178,23 @@
       const results = analyzeSearchResults();
       console.log("解析結果:", results);
 
-      // 結果をbackground.jsに送信
-      chrome.runtime.sendMessage({
-        type: "DOM_PARSED",
-        payload: results,
+      // 検索処理が実行中かどうかを確認してからスクロール処理を実行
+      chrome.storage.local.get(["isAnalyzing"], function (result) {
+        console.log("isAnalyzing状態:", result);
+
+        // isAnalyzingがtrueの場合のみスクロール処理を実行
+        if (result && result.isAnalyzing === true) {
+          console.log("検索処理実行中のため、スクロールを実行します");
+          performScroll();
+        } else {
+          console.log("検索処理実行中ではないため、スクロールをスキップします");
+        }
+
+        // 結果をbackground.jsに送信
+        chrome.runtime.sendMessage({
+          type: "DOM_PARSED",
+          payload: results,
+        });
       });
     } catch (error) {
       console.error("メイン処理エラー:", error);
@@ -182,9 +209,35 @@
 
   // ページ読み込み完了時に実行
   if (document.readyState === "complete") {
-    main();
+    // タブが更新されたときにisAnalyzingの状態を再確認
+    chrome.storage.local.get(["isAnalyzing"], function (result) {
+      console.log("ページ読み込み完了時のisAnalyzing状態:", result);
+      // isAnalyzingがfalseまたは未定義の場合は、念のため明示的にfalseに設定
+      if (!result || result.isAnalyzing !== true) {
+        chrome.storage.local.set({ isAnalyzing: false }, () => {
+          console.log("isAnalyzingをfalseに再設定しました");
+          main();
+        });
+      } else {
+        main();
+      }
+    });
   } else {
-    window.addEventListener("load", main);
+    window.addEventListener("load", function () {
+      // タブが読み込まれたときにisAnalyzingの状態を再確認
+      chrome.storage.local.get(["isAnalyzing"], function (result) {
+        console.log("ページ読み込み完了時のisAnalyzing状態:", result);
+        // isAnalyzingがfalseまたは未定義の場合は、念のため明示的にfalseに設定
+        if (!result || result.isAnalyzing !== true) {
+          chrome.storage.local.set({ isAnalyzing: false }, () => {
+            console.log("isAnalyzingをfalseに再設定しました");
+            main();
+          });
+        } else {
+          main();
+        }
+      });
+    });
   }
 
   chrome.runtime.onMessage.addListener(function (
